@@ -9,9 +9,18 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@instantdb/core": "^0.20.28",
+    "@instantdb/react": "^0.20.28",
+    "@tanstack/react-query": "^5.85.3",
+    "@trpc/client": "^11.4.4",
+    "@trpc/react-query": "^11.4.4",
+    "@trpc/server": "^11.4.4",
+    "morphcloud": "^0.0.17",
+    "next": "15.4.6",
     "react": "19.1.0",
     "react-dom": "19.1.0",
-    "next": "15.4.6"
+    "superjson": "^2.2.2",
+    "zod": "^4.0.17"
   },
   "devDependencies": {
     "typescript": "^5",
