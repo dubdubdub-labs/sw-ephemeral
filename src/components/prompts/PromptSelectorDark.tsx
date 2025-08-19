@@ -125,13 +125,6 @@ export function PromptSelectorDark({ onSelect, required = true, className = '' }
         </button>
       )}
       
-      <Link 
-        href="/prompts"
-        className="block px-3 py-1 text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1"
-      >
-        <Plus className="h-3 w-3" />
-        Manage prompts
-      </Link>
     </div>
   );
 }

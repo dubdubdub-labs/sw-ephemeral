@@ -9,18 +9,32 @@ import { isTokenExpired, isTokenExpiringSoon } from '@/lib/anthropic';
 import Link from 'next/link';
 import { PromptSelectorDark } from '@/components/prompts/PromptSelectorDark';
 import { usePromptMutations } from '@/hooks/use-prompt-mutations';
+import { usePrompts, usePromptDetails } from '@/hooks/use-prompts';
 import { trpc } from '@/lib/trpc/client';
+import dynamic from 'next/dynamic';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { 
   Terminal, FileText, RefreshCw, ChevronRight, ChevronDown,
   User, Clock, AlertCircle, CheckCircle, XCircle, Play,
   Settings, GitBranch, Home, Code, Folder, FolderOpen,
-  Server, Pause, StopCircle, FileCode, Search, ListTree
+  Server, Pause, StopCircle, FileCode, Search, ListTree,
+  Save, Hash, GitCommit, Eye, Edit2, Star, History, Plus,
+  GitFork, MoreVertical
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { estimateTokens } from '@/lib/prompts/utils';
+
+// Dynamically import Monaco Editor to avoid SSR issues
+const MonacoEditor = dynamic(
+  () => import('@monaco-editor/react'),
+  { ssr: false }
+);
 
 export default function HomeV2Page() {
   const router = useRouter();
@@ -31,16 +45,30 @@ export default function HomeV2Page() {
   const [selectedPromptId, setSelectedPromptId] = useState<string | null>(null);
   const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null);
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['tokens', 'prompt', 'instances', 'tasks']));
-  const [activeTab, setActiveTab] = useState<'overview' | 'instances'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'instances' | 'prompts'>('overview');
+  const [selectedEditPromptId, setSelectedEditPromptId] = useState<string | null>(null);
+  const [promptContent, setPromptContent] = useState('');
+  const [promptChangelog, setPromptChangelog] = useState('');
+  const [hasPromptChanges, setHasPromptChanges] = useState(false);
+  const [selectedPromptVersionId, setSelectedPromptVersionId] = useState<string | null>(null);
+  const [lastRefreshed, setLastRefreshed] = useState<Date>(new Date());
+  const [showNewPromptDialog, setShowNewPromptDialog] = useState(false);
+  const [newPromptName, setNewPromptName] = useState('');
+  const [showForkDialog, setShowForkDialog] = useState(false);
+  const [forkPromptName, setForkPromptName] = useState('');
   
-  const { setTaskSystemPrompt } = usePromptMutations();
+  const { setTaskSystemPrompt, createVersion, createPrompt, setDefaultPrompt, forkPrompt } = usePromptMutations();
+  const { prompts, isLoading: promptsLoading } = usePrompts();
+  const { prompt: editingPrompt, versions, latestVersion } = usePromptDetails(selectedEditPromptId || '');
   
   // Fetch active instances from Morph
   const { data: instances = [], isLoading: instancesLoading, refetch: refetchInstances } = trpc.morph.instances.list.useQuery(
     undefined,
     { 
-      refetchInterval: 10000, // Refresh every 10 seconds
-      refetchIntervalInBackground: true
+      refetchInterval: 5000, // Refresh every 5 seconds
+      refetchIntervalInBackground: true,
+      enabled: true,
+      staleTime: 0
     }
   );
   
@@ -158,7 +186,7 @@ export default function HomeV2Page() {
     <div className="h-screen bg-[#1e1e1e] text-gray-300 flex flex-col">
       {/* Top Bar */}
       <div className="h-12 bg-[#2d2d30] border-b border-[#3e3e42] flex items-center px-4">
-        <div className="flex items-center gap-4 flex-1">
+        <div className="flex items-center gap-4">
           <Terminal className="h-5 w-5 text-green-400" />
           <h1 className="text-lg font-semibold">Switchboard Operator</h1>
           <Separator orientation="vertical" className="h-6 bg-[#3e3e42]" />
@@ -166,48 +194,60 @@ export default function HomeV2Page() {
             Ready
           </Badge>
         </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-8 text-gray-400 hover:text-gray-200"
-          onClick={() => router.push('/')}
-        >
-          <Code className="h-4 w-4 mr-2" />
-          Classic View
-        </Button>
       </div>
       
       <div className="flex-1 flex overflow-hidden">
-        {/* Left Sidebar - Configuration */}
-        <div className="w-64 bg-[#252526] border-r border-[#3e3e42]">
-          {/* Tab Bar */}
-          <div className="h-9 border-b border-[#3e3e42] flex">
+        {/* Icon Bar */}
+        <div className="flex flex-col border-r border-[#3e3e42] bg-[#2d2d30]">
             <button
               className={cn(
-                "px-3 text-xs font-medium transition-colors flex items-center gap-1.5",
+                "w-12 h-12 flex items-center justify-center transition-colors relative",
                 activeTab === 'overview' 
-                  ? "bg-[#1e1e1e] text-gray-200 border-b-2 border-[#007acc]"
+                  ? "text-gray-200"
                   : "text-gray-500 hover:text-gray-300"
               )}
               onClick={() => setActiveTab('overview')}
+              title="Overview"
             >
-              <Home className="h-3.5 w-3.5" />
-              Overview
+              <Home className="h-5 w-5" />
+              {activeTab === 'overview' && (
+                <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-[#007acc]" />
+              )}
             </button>
             <button
               className={cn(
-                "px-3 text-xs font-medium transition-colors flex items-center gap-1.5",
+                "w-12 h-12 flex items-center justify-center transition-colors relative",
                 activeTab === 'instances' 
-                  ? "bg-[#1e1e1e] text-gray-200 border-b-2 border-[#007acc]"
+                  ? "text-gray-200"
                   : "text-gray-500 hover:text-gray-300"
               )}
               onClick={() => setActiveTab('instances')}
+              title="Instances"
             >
-              <Server className="h-3.5 w-3.5" />
-              Instances
+              <Server className="h-5 w-5" />
+              {activeTab === 'instances' && (
+                <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-[#007acc]" />
+              )}
             </button>
-          </div>
-          
+            <button
+              className={cn(
+                "w-12 h-12 flex items-center justify-center transition-colors relative",
+                activeTab === 'prompts' 
+                  ? "text-gray-200"
+                  : "text-gray-500 hover:text-gray-300"
+              )}
+              onClick={() => setActiveTab('prompts')}
+              title="Prompts"
+            >
+              <FileText className="h-5 w-5" />
+              {activeTab === 'prompts' && (
+                <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-[#007acc]" />
+              )}
+            </button>
+        </div>
+        
+        {/* Sidebar Panel */}
+        <div className="w-64 bg-[#252526] border-r border-[#3e3e42]">
           <ScrollArea className="h-full">
             <div className="p-2">
               {activeTab === 'overview' ? (
@@ -251,7 +291,7 @@ export default function HomeV2Page() {
                               <button
                                 key={token.id}
                                 className={cn(
-                                  "w-full px-2 py-1.5 rounded text-left transition-all text-[11px]",
+                                  "w-full px-2 py-1 rounded text-left transition-all text-[11px]",
                                   selectedTokenId === token.id 
                                     ? "bg-[#094771] border border-[#007acc]" 
                                     : "bg-[#1e1e1e] hover:bg-[#2a2d2e] border border-transparent"
@@ -347,7 +387,7 @@ export default function HomeV2Page() {
                         tasks.slice(0, 10).map((task: any) => (
                           <button
                             key={task.id}
-                            className="w-full px-2 py-1.5 bg-[#1e1e1e] hover:bg-[#2a2d2e] rounded text-left transition-all"
+                            className="w-full px-2 py-1 bg-[#1e1e1e] hover:bg-[#2a2d2e] rounded text-left transition-all"
                             onClick={() => {
                               const tokenId = task.metadata?.selectedTokenId || selectedTokenId;
                               if (tokenId) {
@@ -375,19 +415,53 @@ export default function HomeV2Page() {
                   )}
                 </div>
               </>
-            ) : (
+            ) : activeTab === 'instances' ? (
               <>
                 {/* Active Instances Section */}
                 <div className="mb-1">
-                  <div className="px-1.5 py-0.5 text-[11px] font-medium uppercase text-gray-400">
-                    Running Instances
+                  <div className="px-1.5 py-0.5 text-[11px] font-medium uppercase text-gray-400 flex items-center justify-between">
+                    <div className="flex items-center gap-1">
+                      <span>Running Instances</span>
+                      <span className="text-[10px] text-gray-500">({instances.filter(i => i.state === 'ready').length})</span>
+                    </div>
+                    <div className="flex items-center gap-0.5">
+                      {instances.filter(i => i.state === 'ready').length > 0 && (
+                        <button
+                          className="p-0.5 hover:bg-[#2a2d2e] rounded transition-colors"
+                          onClick={() => {
+                            const readyInstances = instances.filter((i: any) => i.state === 'ready');
+                            if (confirm(`Stop all ${readyInstances.length} instances?`)) {
+                              readyInstances.forEach((instance: any) => {
+                                stopInstanceMutation.mutate({ instanceId: instance.id });
+                              });
+                            }
+                          }}
+                          title="Stop All"
+                        >
+                          <StopCircle className="h-3 w-3 text-red-400 hover:text-red-300" />
+                        </button>
+                      )}
+                      <button
+                        className="p-0.5 hover:bg-[#2a2d2e] rounded transition-colors"
+                        onClick={() => {
+                          refetchInstances();
+                          setLastRefreshed(new Date());
+                        }}
+                        title={`Refresh (Last: ${lastRefreshed.toLocaleTimeString()})`}
+                      >
+                        <RefreshCw className={cn(
+                          "h-3 w-3 text-gray-400 hover:text-gray-200",
+                          instancesLoading && "animate-spin"
+                        )} />
+                      </button>
+                    </div>
                   </div>
                   <div className="mt-1 space-y-1">
                     {instancesLoading ? (
                       <div className="px-2 text-[10px] text-gray-500">Loading...</div>
-                    ) : instances.filter(i => i.state === 'running').length > 0 ? (
+                    ) : instances.filter((i: any) => i.state === 'ready').length > 0 ? (
                       <>
-                        {instances.filter((i: any) => i.state === 'running').map((instance: any) => (
+                        {instances.filter((i: any) => i.state === 'ready').map((instance: any) => (
                           <div
                             key={instance.id}
                             className="px-2 py-1.5 bg-[#1e1e1e] hover:bg-[#2a2d2e] rounded transition-all"
@@ -395,8 +469,8 @@ export default function HomeV2Page() {
                             <div className="flex items-center justify-between">
                               <div className="flex items-center gap-1.5 flex-1 min-w-0">
                                 <div className="w-1.5 h-1.5 rounded-full bg-green-500" />
-                                <span className="text-[11px] text-gray-300 truncate">
-                                  {instance.id.slice(0, 10)}...
+                                <span className="text-[11px] text-gray-300 truncate" title={instance.id}>
+                                  {instance.id}
                                 </span>
                               </div>
                               <div className="flex items-center gap-0.5">
@@ -417,16 +491,16 @@ export default function HomeV2Page() {
                             </div>
                           </div>
                         ))}
-                        {instances.filter(i => i.state === 'running').length > 1 && (
+                        {instances.filter(i => i.state === 'ready').length > 1 && (
                           <div className="px-2 mt-1">
                             <Button
                               size="sm"
                               variant="ghost"
                               className="w-full h-5 text-[10px] text-red-400 hover:text-red-300 hover:bg-red-900/20"
                               onClick={() => {
-                                const runningInstances = instances.filter((i: any) => i.state === 'running');
-                                if (confirm(`Stop all ${runningInstances.length} instances?`)) {
-                                  runningInstances.forEach((instance: any) => {
+                                const readyInstances = instances.filter((i: any) => i.state === 'ready');
+                                if (confirm(`Stop all ${readyInstances.length} instances?`)) {
+                                  readyInstances.forEach((instance: any) => {
                                     stopInstanceMutation.mutate({ instanceId: instance.id });
                                   });
                                 }
@@ -438,7 +512,73 @@ export default function HomeV2Page() {
                         )}
                       </>
                     ) : (
-                      <div className="px-2 text-[10px] text-gray-500">No running instances</div>
+                      <div className="px-2 text-[10px] text-gray-500">No instances found</div>
+                    )}
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                {/* Prompts List */}
+                <div className="mb-1">
+                  <div className="px-1.5 py-0.5 text-[11px] font-medium uppercase text-gray-400 flex items-center justify-between">
+                    <span>System Prompts</span>
+                    <button
+                      className="p-0.5 hover:bg-[#2a2d2e] rounded"
+                      onClick={() => {
+                        setNewPromptName('');
+                        setShowNewPromptDialog(true);
+                      }}
+                      title="New Prompt"
+                    >
+                      <Plus className="h-3 w-3 text-gray-400" />
+                    </button>
+                  </div>
+                  <div className="mt-1 space-y-1">
+                    {promptsLoading ? (
+                      <div className="px-2 text-[10px] text-gray-500">Loading...</div>
+                    ) : prompts.length > 0 ? (
+                      prompts.map((prompt: any) => {
+                        const latestVersion = prompt.versions?.find((v: any) => v.isLatest);
+                        return (
+                          <button
+                            key={prompt.id}
+                            className={cn(
+                              "w-full px-2 py-1.5 rounded text-left transition-all",
+                              selectedEditPromptId === prompt.id
+                                ? "bg-[#094771] border border-[#007acc]"
+                                : "bg-[#1e1e1e] hover:bg-[#2a2d2e] border border-transparent"
+                            )}
+                            onClick={() => {
+                              setSelectedEditPromptId(prompt.id);
+                              const promptLatestVersion = prompt.versions?.find((v: any) => v.isLatest);
+                              if (promptLatestVersion) {
+                                setPromptContent(promptLatestVersion.content || '');
+                                setSelectedPromptVersionId(promptLatestVersion.id);
+                              }
+                            }}
+                          >
+                            <div className="flex items-center gap-1.5">
+                              <FileText className="h-2.5 w-2.5 text-gray-500" />
+                              <div className="flex-1 min-w-0">
+                                <div className="text-[11px] text-gray-300 truncate">
+                                  {prompt.name}
+                                </div>
+                                {latestVersion && (
+                                  <div className="text-[10px] text-gray-500">
+                                    v{latestVersion.version} • {latestVersion.tokenCount || 0} tokens
+                                  </div>
+                                )}
+                              </div>
+                              {prompt.isDefault && (
+                                <Star className="h-2.5 w-2.5 text-yellow-500" />
+                              )}
+                            </div>
+                          </button>
+                        );
+                      })
+                    ) : (
+                      <div className="px-2 text-[10px] text-gray-500">No prompts yet</div>
                     )}
                   </div>
                 </div>
@@ -450,8 +590,196 @@ export default function HomeV2Page() {
         
         {/* Main Content Area */}
         <div className="flex-1 bg-[#1e1e1e] flex items-center justify-center">
-          <div className="max-w-2xl w-full p-8">
-            <form onSubmit={handleSubmit} className="space-y-6">
+          {activeTab === 'prompts' && selectedEditPromptId ? (
+            // Prompt Editor View
+            <div className="w-full h-full flex">
+              {/* Main Editor Area */}
+              <div className="flex-1 flex flex-col">
+                {/* Editor Header */}
+                <div className="h-12 bg-[#2d2d30] border-b border-[#3e3e42] flex items-center justify-between px-4">
+                <div className="flex items-center gap-3">
+                  <h2 className="text-sm font-medium text-gray-200">
+                    {editingPrompt?.name || 'Loading...'}
+                  </h2>
+                  {latestVersion && (
+                    <Badge className="bg-[#007acc]/20 text-[#007acc] border-[#007acc]/30 text-xs">
+                      v{latestVersion.version}
+                    </Badge>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="text-xs text-gray-400">
+                    {estimateTokens(promptContent)} tokens
+                    {latestVersion && promptContent !== latestVersion.content && (
+                      <span className="ml-2 text-yellow-400">
+                        ({estimateTokens(promptContent) - (latestVersion.tokenCount || 0) > 0 ? '+' : ''}
+                        {estimateTokens(promptContent) - (latestVersion.tokenCount || 0)})
+                      </span>
+                    )}
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 text-xs"
+                    onClick={() => {
+                      if (selectedEditPromptId) {
+                        setForkPromptName('');
+                        setShowForkDialog(true);
+                      }
+                    }}
+                    title="Fork Prompt"
+                  >
+                    <GitFork className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className={cn(
+                      "h-7 text-xs",
+                      editingPrompt?.isDefault && "text-yellow-400"
+                    )}
+                    onClick={async () => {
+                      if (selectedEditPromptId) {
+                        await setDefaultPrompt(selectedEditPromptId);
+                      }
+                    }}
+                    title="Set as Default"
+                  >
+                    <Star className={cn(
+                      "h-3.5 w-3.5",
+                      editingPrompt?.isDefault && "fill-current"
+                    )} />
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 text-xs"
+                    disabled={!promptContent || promptContent === latestVersion?.content || !promptChangelog}
+                    onClick={async () => {
+                      if (selectedEditPromptId && promptContent && promptChangelog) {
+                        await createVersion({
+                          promptId: selectedEditPromptId,
+                          content: promptContent,
+                          changelog: promptChangelog
+                        });
+                        setPromptChangelog('');
+                        setHasPromptChanges(false);
+                      }
+                    }}
+                    title={!promptChangelog && hasPromptChanges ? "Enter changelog below to save" : "Save Version"}
+                  >
+                    <Save className="h-3.5 w-3.5 mr-1" />
+                    Save Version
+                  </Button>
+                </div>
+              </div>
+              
+              {/* Monaco Editor */}
+              <div className="flex-1">
+                <MonacoEditor
+                  value={promptContent}
+                  onChange={(value) => {
+                    setPromptContent(value || '');
+                    setHasPromptChanges(value !== latestVersion?.content);
+                  }}
+                  language="markdown"
+                  theme="vs-dark"
+                  options={{
+                    minimap: { enabled: false },
+                    fontSize: 13,
+                    lineNumbers: 'on',
+                    wordWrap: 'on',
+                    padding: { top: 16, bottom: 16 }
+                  }}
+                />
+              </div>
+              
+                {/* Save Changelog Input */}
+                {hasPromptChanges && (
+                  <div className="h-12 bg-[#2d2d30] border-t border-[#3e3e42] flex items-center px-4">
+                    <input
+                      type="text"
+                      placeholder="Describe your changes (required to save)..."
+                      value={promptChangelog}
+                      onChange={(e) => setPromptChangelog(e.target.value)}
+                      className="flex-1 bg-[#1e1e1e] border border-[#3e3e42] rounded px-2 py-1 text-xs text-gray-300 placeholder:text-gray-600 focus:outline-none focus:ring-1 focus:ring-[#007acc]"
+                    />
+                  </div>
+                )}
+              </div>
+              
+              {/* Right Sidebar - Version History */}
+              <div className="w-64 bg-[#252526] border-l border-[#3e3e42] flex flex-col">
+                <div className="h-12 bg-[#2d2d30] border-b border-[#3e3e42] flex items-center px-3">
+                  <History className="h-3.5 w-3.5 text-gray-400 mr-2" />
+                  <span className="text-xs font-medium text-gray-400">Version History</span>
+                </div>
+                <ScrollArea className="flex-1">
+                  <div className="p-2 space-y-1">
+                    {versions && versions.length > 0 ? (
+                      versions.map((version: any) => (
+                        <button
+                          key={version.id}
+                          className={cn(
+                            "w-full px-2 py-2 rounded text-left transition-all",
+                            latestVersion?.id === version.id
+                              ? "bg-[#094771] border border-[#007acc]"
+                              : "bg-[#1e1e1e] hover:bg-[#2a2d2e] border border-transparent"
+                          )}
+                          onClick={() => {
+                            setSelectedPromptVersionId(version.id);
+                            setPromptContent(version.content || '');
+                            setHasPromptChanges(false);
+                          }}
+                        >
+                          <div className="flex items-center justify-between mb-1">
+                            <div className="flex items-center gap-1.5">
+                              <GitCommit className="h-3 w-3 text-gray-500" />
+                              <span className="text-xs font-medium text-gray-300">
+                                v{version.version}
+                              </span>
+                              {version.isLatest && (
+                                <Badge className="bg-green-600/20 text-green-400 border-green-600/30 text-[10px] px-1 py-0">
+                                  Latest
+                                </Badge>
+                              )}
+                            </div>
+                            <span className="text-[10px] text-gray-500">
+                              {version.tokenCount || 0} tokens
+                            </span>
+                          </div>
+                          {version.changelog && (
+                            <p className="text-[10px] text-gray-400 mb-1">
+                              {version.changelog}
+                            </p>
+                          )}
+                          <p className="text-[10px] text-gray-500">
+                            {new Date(version.createdAt).toLocaleDateString()} • {new Date(version.createdAt).toLocaleTimeString()}
+                          </p>
+                        </button>
+                      ))
+                    ) : (
+                      <div className="text-xs text-gray-500 text-center py-4">
+                        No versions yet
+                      </div>
+                    )}
+                  </div>
+                </ScrollArea>
+              </div>
+            </div>
+          ) : activeTab === 'prompts' ? (
+            // Prompts tab with no selection
+            <div className="max-w-2xl w-full p-8 text-center">
+              <FileText className="h-12 w-12 text-gray-600 mx-auto mb-4" />
+              <h2 className="text-lg font-medium text-gray-400 mb-2">Select a Prompt to Edit</h2>
+              <p className="text-sm text-gray-500">
+                Choose a prompt from the sidebar to view and edit its content
+              </p>
+            </div>
+          ) : (
+            // Original form view for Overview/Instances tabs
+            <div className="max-w-2xl w-full p-8">
+              <form onSubmit={handleSubmit} className="space-y-6">
               {/* Project Input */}
               <div>
                 <label htmlFor="prompt" className="block text-sm font-medium text-gray-400 mb-2">
@@ -463,7 +791,7 @@ export default function HomeV2Page() {
                     rows={8}
                     value={prompt}
                     onChange={(e) => setPrompt(e.target.value)}
-                    placeholder="Describe what you want to build..."
+                    placeholder="What are you working on today?"
                     disabled={isLoading || isSelectedTokenExpired}
                     className="w-full px-4 py-3 bg-[#252526] border border-[#3e3e42] rounded-lg text-gray-300 placeholder:text-gray-600 focus:outline-none focus:ring-2 focus:ring-[#007acc] focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed resize-none font-mono text-sm"
                   />
@@ -538,6 +866,7 @@ export default function HomeV2Page() {
               </button>
             </form>
           </div>
+          )}
         </div>
       </div>
       
@@ -555,6 +884,97 @@ export default function HomeV2Page() {
           )}
         </div>
       </div>
+      
+      {/* New Prompt Dialog */}
+      <Dialog open={showNewPromptDialog} onOpenChange={setShowNewPromptDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create New Prompt</DialogTitle>
+            <DialogDescription>
+              Enter a name for your new system prompt
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="prompt-name" className="text-right">
+                Name
+              </Label>
+              <Input
+                id="prompt-name"
+                value={newPromptName}
+                onChange={(e) => setNewPromptName(e.target.value)}
+                className="col-span-3"
+                placeholder="My System Prompt"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              onClick={async () => {
+                if (newPromptName) {
+                  const content = '# System Prompt\n\nEnter your system prompt here...';
+                  const result = await createPrompt({ name: newPromptName, content });
+                  if (result?.promptId) {
+                    setSelectedEditPromptId(result.promptId);
+                    setPromptContent(content);
+                    setShowNewPromptDialog(false);
+                  }
+                }
+              }}
+              disabled={!newPromptName}
+            >
+              Create
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      
+      {/* Fork Prompt Dialog */}
+      <Dialog open={showForkDialog} onOpenChange={setShowForkDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Fork Prompt</DialogTitle>
+            <DialogDescription>
+              Enter a name for your forked prompt
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="fork-name" className="text-right">
+                Name
+              </Label>
+              <Input
+                id="fork-name"
+                value={forkPromptName}
+                onChange={(e) => setForkPromptName(e.target.value)}
+                className="col-span-3"
+                placeholder="My Forked Prompt"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              onClick={async () => {
+                if (forkPromptName && selectedEditPromptId && latestVersion) {
+                  const result = await forkPrompt({ 
+                    originalPromptId: selectedEditPromptId, 
+                    originalVersionId: latestVersion.id,
+                    newName: forkPromptName,
+                    forkReason: 'Forked from UI'
+                  });
+                  if (result?.promptId) {
+                    setSelectedEditPromptId(result.promptId);
+                    setShowForkDialog(false);
+                  }
+                }
+              }}
+              disabled={!forkPromptName || !latestVersion}
+            >
+              Fork
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
