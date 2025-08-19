@@ -1,6 +1,7 @@
 'use client';
 
 import { useOperatorServices } from '@/hooks/use-operator-services';
+import { useIframeErrorHandler } from '@/hooks/use-iframe-error-handler';
 import { useRef, useState, useEffect } from 'react';
 
 export function OperatorFrame({ instanceId }: { instanceId: string }) {
@@ -10,6 +11,26 @@ export function OperatorFrame({ instanceId }: { instanceId: string }) {
   const [currentUrl, setCurrentUrl] = useState(serviceUrl);
   const [navigationHistory, setNavigationHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
+  const [iframeLoadCount, setIframeLoadCount] = useState(0);
+  
+  // Setup error handler for the iframe
+  const { recreate: recreateErrorHandler } = useIframeErrorHandler(
+    iframeRef,
+    {
+      onErrorReceived: (error) => {
+        console.log('[OperatorFrame] Error detected in iframe:', error);
+      },
+      onErrorCleared: () => {
+        console.log('[OperatorFrame] Error cleared in iframe');
+      },
+      onDismiss: () => {
+        console.log('[OperatorFrame] User dismissed error overlay');
+      },
+      overlayHeight: 150, // Smaller overlay for operator frame
+      accentColor: '#dc2626', // Red-600 to match the design
+    },
+    iframeLoadCount // Recreate handler when iframe loads
+  );
   
   useEffect(() => {
     if (serviceUrl && navigationHistory.length === 0) {
@@ -38,6 +59,12 @@ export function OperatorFrame({ instanceId }: { instanceId: string }) {
         // Can't access cross-origin iframe URL, that's ok
       }
     }
+    
+    // Recreate error handler after iframe loads
+    // Small delay to ensure iframe content is fully ready
+    setTimeout(() => {
+      setIframeLoadCount(prev => prev + 1);
+    }, 100);
   };
   
   const handleRefresh = () => {

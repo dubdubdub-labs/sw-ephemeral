@@ -1,4 +1,6 @@
-import { init } from '@instantdb/react';
+// This file is used by instant-cli to push schema updates
+// Run: bunx instant-cli push-schema
+
 import { i } from '@instantdb/core';
 
 // Define schema matching cloud-code structure
@@ -146,10 +148,4 @@ const schema = i.schema({
   },
 });
 
-export type AppSchema = typeof schema;
-
-export const db = init<AppSchema>({
-  appId: process.env.NEXT_PUBLIC_INSTANT_APP_ID!,
-  schema,
-  devtool: false,
-});
+export default schema;

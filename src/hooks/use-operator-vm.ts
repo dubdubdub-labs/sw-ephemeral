@@ -4,14 +4,33 @@ import { id, lookup } from '@instantdb/core';
 import { useState, useCallback } from 'react';
 import { useAnthropicOAuth } from './use-anthropic-oauth';
 import * as commands from '@/lib/vm/commands';
-import { OPERATOR_SNAPSHOT_ID, VM_TTL_SECONDS, VM_TTL_ACTION, OPERATOR_SYSTEM_PROMPT } from '@/lib/vm/constants';
+import { OPERATOR_SNAPSHOT_ID, VM_TTL_SECONDS, VM_TTL_ACTION } from '@/lib/vm/constants';
+import { useTaskSystemPrompt } from './use-prompts';
 
-export function useOperatorVM() {
+export function useOperatorVM(selectedTokenId?: string | null, taskId?: string) {
   const [isBooting, setIsBooting] = useState(false);
   const [instanceId, setInstanceId] = useState<string>();
   const [error, setError] = useState<string>();
   const [iterationId, setIterationId] = useState<string>();
-  const { token, isUsingSharedToken, isLoading: tokenLoading } = useAnthropicOAuth();
+  
+  // Get the task's system prompt
+  const { promptContent, hasSystemPrompt } = useTaskSystemPrompt(taskId);
+  
+  // Query specific token if provided
+  const { data: tokenData, isLoading: tokenLoading } = db.useQuery(
+    selectedTokenId ? {
+      oauthTokens: {
+        $: { where: { id: selectedTokenId } },
+        userProfile: {}
+      }
+    } : null
+  );
+  
+  // Fallback to hook if no specific token selected
+  const { token: fallbackToken, isUsingSharedToken, isLoading: fallbackLoading } = useAnthropicOAuth();
+  
+  const token = selectedTokenId ? tokenData?.oauthTokens?.[0] : fallbackToken;
+  const isLoading = selectedTokenId ? tokenLoading : fallbackLoading;
   
   const startInstanceMutation = trpc.morph.instances.startInstanceAsync.useMutation();
   const execCommandsMutation = trpc.morph.instances.execCommandsOnInstance.useMutation();
@@ -22,7 +41,8 @@ export function useOperatorVM() {
     taskId: string, 
     prompt: string, 
     machineName: string,
-    token: any
+    token: any,
+    systemPrompt?: string
   ) {
     console.log('setupVMInBackground called with:', {
       instanceId,
@@ -67,7 +87,7 @@ export function useOperatorVM() {
           // Dev server is already running as pm2 process 'operator-dev' in the snapshot
           { command: commands.createClaudeSyncCommand(iterationId) },
           { command: 'sleep 3' },
-          { command: commands.createClaudeSessionCommand('operator-main', prompt, OPERATOR_SYSTEM_PROMPT) },
+          { command: commands.createClaudeSessionCommand('operator-main', prompt, systemPrompt || 'You are an AI assistant helping the user build software.') },
         ],
       });
       console.log('Setup commands executed successfully:', result);
@@ -79,18 +99,28 @@ export function useOperatorVM() {
     return iterationId;
   }
   
-  async function bootOperator(taskId: string, prompt: string, machineName: string) {
+  async function bootOperator(taskId: string, prompt: string, machineName: string, tokenId?: string | null) {
     console.log('Boot operator called, token status:', {
       hasToken: !!token,
       tokenAuth: token?.authToken?.slice(0, 20),
-      isUsingSharedToken,
-      tokenLoading,
+      selectedTokenId,
+      tokenId,
+      isLoading,
+      hasSystemPrompt,
+      systemPromptLength: promptContent?.length,
     });
     
     // Don't boot if tokens are still loading
-    if (tokenLoading) {
+    if (isLoading) {
       console.log('Waiting for tokens to load...');
       return;
+    }
+    
+    // Require system prompt for new tasks
+    if (!hasSystemPrompt || !promptContent) {
+      const errorMsg = 'Task must have a system prompt. Please go back and select a prompt.';
+      setError(errorMsg);
+      throw new Error(errorMsg);
     }
     
     // For now, we'll proceed without token and handle it in background setup
@@ -117,7 +147,7 @@ export function useOperatorVM() {
       // Only run background setup if we have a token
       if (hasToken) {
         console.log('Starting background setup for instance:', instance.id);
-        setupVMInBackground(instance.id, taskId, prompt, machineName, token).then(iterationId => {
+        setupVMInBackground(instance.id, taskId, prompt, machineName, token, promptContent).then(iterationId => {
           setIterationId(iterationId);
           console.log('VM setup completed with iteration:', iterationId);
         }).catch(err => {
@@ -225,7 +255,7 @@ export function useOperatorVM() {
     instanceId,
     iterationId,
     error,
-    tokenLoading,
+    tokenLoading: isLoading,
     checkExistingInstance,
   };
 }

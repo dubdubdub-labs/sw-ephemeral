@@ -8,6 +8,37 @@ const morph = new MorphCloudClient({
 
 export const morphRouter = router({
   instances: {
+    list: publicProcedure
+      .query(async () => {
+        try {
+          const instances = await morph.instances.list();
+          console.log('Raw instances from Morph:', instances);
+          
+          // Check status field (Morph uses status, not state)
+          const activeInstances = instances
+            .filter((instance: any) => {
+              return instance.status === 'ready' || 
+                     instance.status === 'running' || 
+                     instance.status === 'starting' ||
+                     instance.status === 'paused';
+            })
+            .map((instance: any) => ({
+              id: instance.id,
+              state: instance.state || instance.status, // Use status if state is not available
+              status: instance.status,
+              metadata: instance.metadata,
+              createdAt: instance.created_at,
+              networking: instance.networking,
+            }));
+          
+          console.log('Active instances:', activeInstances.length);
+          return activeInstances;
+        } catch (error) {
+          console.error('Failed to list instances:', error);
+          return [];
+        }
+      }),
+    
     startInstanceAsync: publicProcedure
       .input(
         z.object({

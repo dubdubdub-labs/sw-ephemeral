@@ -18,8 +18,9 @@ export default function OperatorPage({ params }: PageProps) {
   const { taskId } = use(params);
   const searchParams = useSearchParams();
   const prompt = searchParams.get('prompt');
+  const tokenId = searchParams.get('tokenId');
   
-  const { bootOperator, isBooting, instanceId, error, tokenLoading, checkExistingInstance } = useOperatorVM();
+  const { bootOperator, isBooting, instanceId, error, tokenLoading, checkExistingInstance } = useOperatorVM(tokenId, taskId);
   const { debug } = useOperatorChat(taskId, instanceId);
   
   // Use ref to track if boot has been initiated (survives re-renders and StrictMode)
@@ -49,7 +50,7 @@ export default function OperatorPage({ params }: PageProps) {
       console.log('No existing instance found, booting new operator VM...', { taskId, prompt: prompt.slice(0, 50) });
       
       const machineName = `operator-${Date.now()}`;
-      bootOperator(taskId, prompt, machineName).catch(error => {
+      bootOperator(taskId, prompt, machineName, tokenId).catch(error => {
         console.error('Failed to boot operator:', error);
         bootInitiated.current = false; // Reset on error so user can retry
       });
@@ -73,6 +74,20 @@ export default function OperatorPage({ params }: PageProps) {
                   <li>Ensure OAuth tokens exist in InstantDB</li>
                   <li>The system will try to use any available Anthropic OAuth token</li>
                   <li>Check the console for more details</li>
+                </ol>
+              </div>
+            )}
+            
+            {error.includes('system prompt') && (
+              <div className="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded">
+                <h3 className="font-semibold text-yellow-800 mb-2">Missing System Prompt</h3>
+                <p className="text-sm text-yellow-700 mb-2">
+                  Every task requires a system prompt to guide the AI assistant.
+                </p>
+                <ol className="list-decimal list-inside text-sm text-yellow-700 space-y-1">
+                  <li>Go back to the homepage</li>
+                  <li>Select a system prompt from the library</li>
+                  <li>Create a new task with the selected prompt</li>
                 </ol>
               </div>
             )}
