@@ -4,6 +4,7 @@ import { trpc } from '@/lib/trpc/client';
 import { useState, forwardRef, useImperativeHandle } from 'react';
 import { OPERATOR_SERVICE_NAME } from '@/lib/vm/constants';
 import { VSCodeModal } from './VSCodeModal';
+import { DatabaseStatusCompact } from './DatabaseStatus';
 
 export interface OperatorStatusRef {
   handleBack: () => void;
@@ -14,6 +15,7 @@ export interface OperatorStatusRef {
 }
 
 interface OperatorStatusProps {
+  taskId: string;
   instanceId: string;
   canGoBack: boolean;
   canGoForward: boolean;
@@ -23,7 +25,7 @@ interface OperatorStatusProps {
 }
 
 export const OperatorStatus = forwardRef<OperatorStatusRef, OperatorStatusProps>(
-  ({ instanceId, canGoBack, canGoForward, onBack, onForward, onRefresh }, ref) => {
+  ({ taskId, instanceId, canGoBack, canGoForward, onBack, onForward, onRefresh }, ref) => {
     const { data } = trpc.morph.instances.get.useQuery(
       { instanceId },
       { refetchInterval: 5000 }
@@ -87,6 +89,9 @@ export const OperatorStatus = forwardRef<OperatorStatusRef, OperatorStatusProps>
           <div className="text-xs text-gray-500 font-mono">
             {instanceId}
           </div>
+          
+          {/* Database Status */}
+          <DatabaseStatusCompact taskId={taskId} />
         </div>
         
         {/* Center section: Navigation and URL (browser-like) */}

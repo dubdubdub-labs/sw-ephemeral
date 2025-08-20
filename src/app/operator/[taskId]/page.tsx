@@ -161,6 +161,7 @@ export default function OperatorPage({ params }: PageProps) {
     <div className="h-screen flex flex-col bg-gray-50">
       <OperatorStatus 
         ref={statusRef}
+        taskId={taskId}
         instanceId={instanceId} 
         canGoBack={navigationState.canGoBack}
         canGoForward={navigationState.canGoForward}

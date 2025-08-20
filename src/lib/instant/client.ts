@@ -72,6 +72,12 @@ const schema = i.schema({
       refreshToken: i.string(),
       expiresAt: i.date(),
     }),
+    databases: i.entity({
+      instantAppId: i.string().unique().indexed(),
+      adminToken: i.string(),
+      name: i.string(),
+      createdAt: i.date().indexed(),
+    }),
   },
   links: {
     // Prompt to versions relationship
@@ -142,6 +148,15 @@ const schema = i.schema({
     userOauthTokens: {
       forward: { on: "userProfiles", has: "many", label: "oauthTokens" },
       reverse: { on: "oauthTokens", has: "one", label: "userProfile" },
+    },
+    // Database relationships
+    taskMainDatabase: {
+      forward: { on: "tasks", has: "one", label: "mainDatabase" },
+      reverse: { on: "databases", has: "one", label: "task" },
+    },
+    databaseOriginIteration: {
+      forward: { on: "databases", has: "one", label: "originIteration" },
+      reverse: { on: "iterations", has: "many", label: "originatedDatabases" },
     },
   },
 });

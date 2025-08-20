@@ -181,6 +181,19 @@ export default function HomePage() {
     }
   });
   
+  const createDatabaseMutation = trpc.instant.createDatabase.useMutation({
+    onSuccess: (data) => {
+      if (data.success) {
+        console.log(`Database "${data.name}" created for task`);
+      } else {
+        console.error('Database creation failed:', data.error);
+      }
+    },
+    onError: (error) => {
+      console.error('Failed to create database:', error);
+    }
+  });
+  
   const handleSnapshotInstance = (instanceId: string) => {
     setSnapshotInstanceId(instanceId);
     setSnapshotFriendlyName('');
@@ -299,6 +312,9 @@ export default function HomePage() {
         promptId: selectedPromptId,
         versionId: selectedVersionId,
       });
+      
+      // Create database for the task (async, non-blocking)
+      createDatabaseMutation.mutate({ taskId });
       
       // Navigate to the operator page with the task ID, token, snapshot ID, and model
       router.push(`/operator/${taskId}?prompt=${encodeURIComponent(prompt)}&tokenId=${selectedTokenId}&snapshotId=${selectedOperatorSnapshotId}&model=${selectedModel}`);

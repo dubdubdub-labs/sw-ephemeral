@@ -10,8 +10,9 @@
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.1",
+    "@instantdb/admin": "^0.21.3",
     "@instantdb/core": "^0.20.28",
-    "@instantdb/react": "^0.20.28",
+    "@instantdb/react": "^0.21.3",
     "@monaco-editor/react": "^4.7.0",
     "@radix-ui/react-accordion": "^1.2.12",
     "@radix-ui/react-alert-dialog": "^1.1.15",
