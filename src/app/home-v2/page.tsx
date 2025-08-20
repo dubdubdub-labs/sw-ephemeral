@@ -20,12 +20,12 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { 
-  Terminal, FileText, RefreshCw, ChevronRight, ChevronDown,
-  User, Clock, AlertCircle, CheckCircle, XCircle, Play,
+  Terminal, FileText, RefreshCw, ChevronRight, ChevronDown, ChevronLeft,
+  User, Clock, AlertCircle, CheckCircle, XCircle, Play, Circle,
   Settings, GitBranch, Home, Code, Folder, FolderOpen,
   Server, Pause, StopCircle, FileCode, Search, ListTree,
   Save, Hash, GitCommit, Eye, Edit2, Star, History, Plus,
-  GitFork, MoreVertical
+  GitFork, MoreVertical, Camera, HardDrive, Rocket, Monitor, Trash2
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { estimateTokens } from '@/lib/prompts/utils';
@@ -56,6 +56,15 @@ export default function HomeV2Page() {
   const [newPromptName, setNewPromptName] = useState('');
   const [showForkDialog, setShowForkDialog] = useState(false);
   const [forkPromptName, setForkPromptName] = useState('');
+  const [selectedInstanceId, setSelectedInstanceId] = useState<string | null>(null);
+  const [showVSCode, setShowVSCode] = useState(false);
+  const [showSnapshotDialog, setShowSnapshotDialog] = useState(false);
+  const [snapshotFriendlyName, setSnapshotFriendlyName] = useState('');
+  const [snapshotInstanceId, setSnapshotInstanceId] = useState<string | null>(null);
+  const [isSnapshotting, setIsSnapshotting] = useState(false);
+  const [isBooting, setIsBooting] = useState<string | null>(null);
+  const [selectedOperatorSnapshotId, setSelectedOperatorSnapshotId] = useState<string | null>(null);
+  const [operatorSnapshotPage, setOperatorSnapshotPage] = useState(0);
   
   const { setTaskSystemPrompt, createVersion, createPrompt, setDefaultPrompt, forkPrompt } = usePromptMutations();
   const { prompts, isLoading: promptsLoading } = usePrompts();
@@ -83,6 +92,113 @@ export default function HomeV2Page() {
   const resumeInstanceMutation = trpc.morph.instance.resume.useMutation({
     onSuccess: () => refetchInstances()
   });
+  
+  // Fetch snapshots with operator templates
+  const { data: snapshots = [], isLoading: snapshotsLoading, refetch: refetchSnapshots } = trpc.morph.snapshots.list.useQuery(
+    undefined,
+    { 
+      refetchInterval: 10000, // Refresh every 10 seconds
+      refetchIntervalInBackground: true,
+      enabled: activeTab === 'instances' || activeTab === 'overview'
+    }
+  );
+  
+  const operatorSnapshots = snapshots.filter(s => 
+    s.metadata?.operatorTemplate === true || s.metadata?.operatorTemplate === 'true'
+  ).sort((a, b) => {
+    // Sort by createdAt date, most recent first
+    const dateA = a.metadata?.createdAt ? new Date(a.metadata.createdAt).getTime() : 0;
+    const dateB = b.metadata?.createdAt ? new Date(b.metadata.createdAt).getTime() : 0;
+    return dateB - dateA;
+  });
+  
+  // Pagination for operator snapshots in the overview tab
+  const SNAPSHOTS_PER_PAGE = 5;
+  const paginatedOperatorSnapshots = operatorSnapshots.slice(
+    operatorSnapshotPage * SNAPSHOTS_PER_PAGE,
+    (operatorSnapshotPage + 1) * SNAPSHOTS_PER_PAGE
+  );
+  const totalSnapshotPages = Math.ceil(operatorSnapshots.length / SNAPSHOTS_PER_PAGE);
+  
+  const snapshotMutation = trpc.morph.instance.snapshot.useMutation({
+    onSuccess: async (data) => {
+      // Add to InstantDB
+      await db.transact([
+        db.tx.morphSnapshots[id()].update({
+          externalMorphSnapshotId: data.id,
+        })
+      ]);
+      
+      // Refresh snapshots list
+      refetchSnapshots();
+      
+      // Reset state
+      setIsSnapshotting(false);
+      setShowSnapshotDialog(false);
+      setSnapshotFriendlyName('');
+      setSnapshotInstanceId(null);
+      
+      // Show success message
+      alert(`Snapshot created successfully! ID: ${data.id}`);
+    },
+    onError: (error) => {
+      setIsSnapshotting(false);
+      alert(`Failed to create snapshot: ${error.message || 'Unknown error'}`);
+    }
+  });
+  
+  const bootSnapshotMutation = trpc.morph.snapshots.start.useMutation({
+    onSuccess: (data) => {
+      refetchInstances();
+      setSelectedInstanceId(data.id);
+      setShowVSCode(true);
+      setIsBooting(null);
+    },
+    onError: () => {
+      setIsBooting(null);
+      alert('Failed to boot snapshot');
+    }
+  });
+  
+  const deleteSnapshotMutation = trpc.morph.snapshots.delete.useMutation({
+    onSuccess: () => {
+      refetchSnapshots();
+      alert('Snapshot deleted successfully');
+    },
+    onError: (error) => {
+      alert(`Failed to delete snapshot: ${error.message || 'Unknown error'}`);
+    }
+  });
+  
+  const handleSnapshotInstance = (instanceId: string) => {
+    setSnapshotInstanceId(instanceId);
+    setSnapshotFriendlyName('');
+    setShowSnapshotDialog(true);
+  };
+  
+  const handleCreateSnapshot = async () => {
+    if (!snapshotInstanceId || !snapshotFriendlyName) return;
+    
+    setIsSnapshotting(true);
+    
+    snapshotMutation.mutate({
+      instanceId: snapshotInstanceId,
+      metadata: {
+        operatorTemplate: 'true',  // Must be a string, not boolean
+        friendlyName: snapshotFriendlyName,
+        createdAt: new Date().toISOString(),
+      },
+    });
+  };
+  
+  const handleBootSnapshot = (snapshotId: string) => {
+    setIsBooting(snapshotId);
+    bootSnapshotMutation.mutate({
+      snapshotId,
+      ttlSeconds: 3600, // 1 hour default
+      ttlAction: 'stop',
+    });
+  };
   
   // Query all users with their tokens
   const { data, isLoading: dataLoading } = db.useQuery({
@@ -115,6 +231,13 @@ export default function HomeV2Page() {
     }
   }, [allTokens.length]);
   
+  // Auto-select most recent operator snapshot if none selected
+  React.useEffect(() => {
+    if (!selectedOperatorSnapshotId && operatorSnapshots.length > 0) {
+      setSelectedOperatorSnapshotId(operatorSnapshots[0].id);
+    }
+  }, [operatorSnapshots.length]);
+  
   const selectedToken = allTokens.find(t => t.id === selectedTokenId);
   const isSelectedTokenExpired = selectedToken ? isTokenExpired(selectedToken.expiresAt) : false;
   const isSelectedTokenExpiringSoon = selectedToken ? isTokenExpiringSoon(selectedToken.expiresAt) : false;
@@ -136,6 +259,11 @@ export default function HomeV2Page() {
     
     if (!selectedPromptId || !selectedVersionId) {
       alert('Please select a system prompt for the task');
+      return;
+    }
+    
+    if (!selectedOperatorSnapshotId) {
+      alert('Please select an operator snapshot');
       return;
     }
 
@@ -161,8 +289,8 @@ export default function HomeV2Page() {
         versionId: selectedVersionId,
       });
       
-      // Navigate to the operator page with the task ID and token
-      router.push(`/operator/${taskId}?prompt=${encodeURIComponent(prompt)}&tokenId=${selectedTokenId}`);
+      // Navigate to the operator page with the task ID, token, and snapshot ID
+      router.push(`/operator/${taskId}?prompt=${encodeURIComponent(prompt)}&tokenId=${selectedTokenId}&snapshotId=${selectedOperatorSnapshotId}`);
     } catch (error) {
       console.error('Failed to create task:', error);
       alert('Failed to create task. Please try again.');
@@ -336,6 +464,100 @@ export default function HomeV2Page() {
                   )}
                 </div>
               
+                {/* Operator Snapshot Section */}
+                <div className="mb-1">
+                  <button
+                    className="w-full flex items-center gap-0.5 px-1.5 py-0.5 text-[11px] hover:bg-[#2a2d2e] rounded"
+                    onClick={() => toggleSection('operatorSnapshot')}
+                  >
+                    {expandedSections.has('operatorSnapshot') ? (
+                      <ChevronDown className="h-3 w-3" />
+                    ) : (
+                      <ChevronRight className="h-3 w-3" />
+                    )}
+                    <HardDrive className="h-3 w-3 text-green-400" />
+                    <span className="font-medium uppercase">Operator Snapshot</span>
+                    {!selectedOperatorSnapshotId && <span className="ml-auto text-red-400 text-[10px]">Required</span>}
+                  </button>
+                
+                  {expandedSections.has('operatorSnapshot') && (
+                    <div className="mt-1 space-y-1">
+                      {snapshotsLoading ? (
+                        <div className="px-2 py-1 text-[10px] text-gray-500">Loading snapshots...</div>
+                      ) : operatorSnapshots.length === 0 ? (
+                        <div className="px-2 py-1 bg-[#1e1e1e] rounded text-[10px]">
+                          <p className="text-yellow-400 mb-1">No operator snapshots found</p>
+                          <p className="text-gray-500">Create a snapshot from the Instances tab</p>
+                        </div>
+                      ) : (
+                        <>
+                          {paginatedOperatorSnapshots.map((snapshot: any) => (
+                            <button
+                              key={snapshot.id}
+                              className={cn(
+                                "w-full px-2 py-1 rounded text-left transition-all text-[11px]",
+                                selectedOperatorSnapshotId === snapshot.id 
+                                  ? "bg-[#094771] border border-[#007acc]" 
+                                  : "bg-[#1e1e1e] hover:bg-[#2a2d2e] border border-transparent"
+                              )}
+                              onClick={() => setSelectedOperatorSnapshotId(snapshot.id)}
+                            >
+                              <div className="flex items-start gap-1">
+                                <div className="mt-0.5">
+                                  {selectedOperatorSnapshotId === snapshot.id ? (
+                                    <CheckCircle className="h-2.5 w-2.5 text-green-400" />
+                                  ) : (
+                                    <Circle className="h-2.5 w-2.5 text-gray-500" />
+                                  )}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="truncate font-medium">
+                                    {snapshot.metadata.friendlyName || 'Unnamed Snapshot'}
+                                  </div>
+                                  <div className="flex items-center gap-2 text-[10px] text-gray-500">
+                                    <span className="truncate" title={snapshot.id}>
+                                      {snapshot.id}
+                                    </span>
+                                    {snapshot.metadata.createdAt && (
+                                      <>
+                                        <span>•</span>
+                                        <span>{new Date(snapshot.metadata.createdAt).toLocaleDateString()}</span>
+                                      </>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            </button>
+                          ))}
+                          {totalSnapshotPages > 1 && (
+                            <div className="flex items-center justify-between px-2 py-0.5">
+                              <button
+                                className="p-0.5 hover:bg-[#2a2d2e] rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                                onClick={() => setOperatorSnapshotPage(Math.max(0, operatorSnapshotPage - 1))}
+                                disabled={operatorSnapshotPage === 0}
+                                title="Previous page"
+                              >
+                                <ChevronLeft className="h-3 w-3 text-gray-400" />
+                              </button>
+                              <span className="text-[10px] text-gray-500">
+                                Page {operatorSnapshotPage + 1} of {totalSnapshotPages}
+                              </span>
+                              <button
+                                className="p-0.5 hover:bg-[#2a2d2e] rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                                onClick={() => setOperatorSnapshotPage(Math.min(totalSnapshotPages - 1, operatorSnapshotPage + 1))}
+                                disabled={operatorSnapshotPage === totalSnapshotPages - 1}
+                                title="Next page"
+                              >
+                                <ChevronRight className="h-3 w-3 text-gray-400" />
+                              </button>
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+              
                 {/* System Prompt Section */}
                 <div className="mb-1">
                   <button
@@ -417,10 +639,98 @@ export default function HomeV2Page() {
               </>
             ) : activeTab === 'instances' ? (
               <>
-                {/* Active Instances Section */}
+                {/* Available Snapshots Section */}
+                <div className="mb-2">
+                  <div className="px-1.5 py-0.5 text-[11px] font-medium uppercase text-gray-400 flex items-center justify-between">
+                    <div className="flex items-center gap-1">
+                      <HardDrive className="h-3 w-3" />
+                      <span>Available Snapshots</span>
+                      <span className="text-[10px] text-gray-500">({operatorSnapshots.length})</span>
+                    </div>
+                    <button
+                      className="p-0.5 hover:bg-[#2a2d2e] rounded transition-colors"
+                      onClick={() => {
+                        refetchSnapshots();
+                      }}
+                      title="Refresh snapshots"
+                    >
+                      <RefreshCw className={cn(
+                        "h-3 w-3 text-gray-400 hover:text-gray-200",
+                        snapshotsLoading && "animate-spin"
+                      )} />
+                    </button>
+                  </div>
+                  <div className="mt-1 space-y-1">
+                    {snapshotsLoading ? (
+                      <div className="px-2 text-[10px] text-gray-500">Loading snapshots...</div>
+                    ) : operatorSnapshots.length > 0 ? (
+                      operatorSnapshots.map((snapshot: any) => (
+                        <div
+                          key={snapshot.id}
+                          className="px-2 py-1.5 bg-[#1e1e1e] hover:bg-[#2a2d2e] rounded transition-all group"
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex-1 min-w-0">
+                              <div className="text-[11px] text-gray-300 font-medium">
+                                {snapshot.metadata.friendlyName || 'Unnamed Snapshot'}
+                              </div>
+                              <div className="flex items-center gap-2 text-[10px] text-gray-500">
+                                <span className="truncate" title={snapshot.id}>
+                                  {snapshot.id}
+                                </span>
+                                {snapshot.metadata.createdAt && (
+                                  <>
+                                    <span>•</span>
+                                    <span>{new Date(snapshot.metadata.createdAt).toLocaleDateString()}</span>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-5 w-5 p-0 opacity-0 group-hover:opacity-100 transition-opacity text-gray-400 hover:text-green-400"
+                                onClick={() => handleBootSnapshot(snapshot.id)}
+                                disabled={isBooting === snapshot.id}
+                                title="Boot snapshot"
+                              >
+                                {isBooting === snapshot.id ? (
+                                  <RefreshCw className="h-3 w-3 animate-spin" />
+                                ) : (
+                                  <Play className="h-3 w-3" />
+                                )}
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-5 w-5 p-0 opacity-0 group-hover:opacity-100 transition-opacity text-gray-400 hover:text-red-400"
+                                onClick={() => {
+                                  if (confirm(`Delete snapshot "${snapshot.metadata.friendlyName || snapshot.id}"?`)) {
+                                    deleteSnapshotMutation.mutate({ snapshotId: snapshot.id });
+                                  }
+                                }}
+                                title="Delete snapshot"
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="px-2 text-[10px] text-gray-500">No snapshots available</div>
+                    )}
+                  </div>
+                </div>
+                
+                <Separator className="my-2 bg-[#3e3e42]" />
+                
+                {/* Running Instances Section */}
                 <div className="mb-1">
                   <div className="px-1.5 py-0.5 text-[11px] font-medium uppercase text-gray-400 flex items-center justify-between">
                     <div className="flex items-center gap-1">
+                      <Server className="h-3 w-3" />
                       <span>Running Instances</span>
                       <span className="text-[10px] text-gray-500">({instances.filter(i => i.state === 'ready').length})</span>
                     </div>
@@ -464,7 +774,16 @@ export default function HomeV2Page() {
                         {instances.filter((i: any) => i.state === 'ready').map((instance: any) => (
                           <div
                             key={instance.id}
-                            className="px-2 py-1.5 bg-[#1e1e1e] hover:bg-[#2a2d2e] rounded transition-all"
+                            className={cn(
+                              "w-full px-2 py-1.5 rounded transition-all cursor-pointer group",
+                              selectedInstanceId === instance.id
+                                ? "bg-[#094771] border border-[#007acc]"
+                                : "bg-[#1e1e1e] hover:bg-[#2a2d2e] border border-transparent"
+                            )}
+                            onClick={() => {
+                              setSelectedInstanceId(instance.id);
+                              setShowVSCode(true);
+                            }}
                           >
                             <div className="flex items-center justify-between">
                               <div className="flex items-center gap-1.5 flex-1 min-w-0">
@@ -477,8 +796,21 @@ export default function HomeV2Page() {
                                 <Button
                                   size="sm"
                                   variant="ghost"
+                                  className="h-4 w-4 p-0 text-gray-400 hover:text-blue-400"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleSnapshotInstance(instance.id);
+                                  }}
+                                  title="Snapshot"
+                                >
+                                  <Camera className="h-2.5 w-2.5" />
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
                                   className="h-4 w-4 p-0 text-gray-400 hover:text-red-400"
-                                  onClick={() => {
+                                  onClick={(e) => {
+                                    e.stopPropagation();
                                     if (confirm('Stop this instance?')) {
                                       stopInstanceMutation.mutate({ instanceId: instance.id });
                                     }
@@ -590,7 +922,91 @@ export default function HomeV2Page() {
         
         {/* Main Content Area */}
         <div className="flex-1 bg-[#1e1e1e] flex items-center justify-center">
-          {activeTab === 'prompts' && selectedEditPromptId ? (
+          {activeTab === 'instances' && showVSCode && selectedInstanceId ? (
+            // VSCode viewer for instances - show inline
+            <div className="w-full h-full bg-white">
+              {/* Header */}
+              <div className="h-10 bg-white border-b border-gray-200 flex items-center justify-between px-3">
+                <div className="flex items-center gap-2">
+                  <svg className="w-4 h-4 text-blue-600" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M23.15 2.587L18.21.21a1.494 1.494 0 0 0-1.705.29l-9.46 8.63-4.12-3.128a.999.999 0 0 0-1.276.057L.327 7.261A1 1 0 0 0 .326 8.74L3.899 12 .326 15.26a1 1 0 0 0 .001 1.479L1.65 17.94a.999.999 0 0 0 1.276.057l4.12-3.128 9.46 8.63a1.492 1.492 0 0 0 1.704.29l4.942-2.377A1.5 1.5 0 0 0 24 20.06V3.939a1.5 1.5 0 0 0-.85-1.352zm-5.146 14.861L10.826 12l7.178-5.448v10.896z"/>
+                  </svg>
+                  <span className="text-xs font-medium text-gray-600 uppercase tracking-wider">
+                    VSCode - {selectedInstanceId}
+                  </span>
+                </div>
+                
+                <div className="flex items-center gap-1">
+                  {/* Copy VSCode URL */}
+                  <button
+                    onClick={() => {
+                      const vmId = selectedInstanceId.replace('morphvm_', '').replace(/_/g, '-');
+                      const vscodeUrl = `https://vscode-morphvm-${vmId}.http.cloud.morph.so`;
+                      navigator.clipboard.writeText(vscodeUrl);
+                    }}
+                    className="p-1.5 hover:bg-gray-100 rounded transition-colors"
+                    title="Copy VSCode URL"
+                  >
+                    <svg className="w-3.5 h-3.5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                    </svg>
+                  </button>
+                  
+                  {/* Open in new tab */}
+                  <button
+                    onClick={() => {
+                      const vmId = selectedInstanceId.replace('morphvm_', '').replace(/_/g, '-');
+                      const vscodeUrl = `https://vscode-morphvm-${vmId}.http.cloud.morph.so`;
+                      window.open(vscodeUrl, '_blank');
+                    }}
+                    className="p-1.5 hover:bg-gray-100 rounded transition-colors"
+                    title="Open in new tab"
+                  >
+                    <svg className="w-3.5 h-3.5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                    </svg>
+                  </button>
+                  
+                  <div className="w-px h-5 bg-gray-200 mx-1" />
+                  
+                  {/* Close */}
+                  <button
+                    onClick={() => {
+                      setShowVSCode(false);
+                      setSelectedInstanceId(null);
+                    }}
+                    className="p-1.5 hover:bg-gray-100 rounded transition-colors"
+                    title="Close"
+                  >
+                    <svg className="w-3.5 h-3.5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+              
+              {/* VSCode iframe */}
+              <iframe
+                src={`https://vscode-morphvm-${selectedInstanceId.replace('morphvm_', '').replace(/_/g, '-')}.http.cloud.morph.so`}
+                className="w-full h-[calc(100%-40px)] border-0"
+                title="VSCode Editor"
+              />
+            </div>
+          ) : activeTab === 'instances' ? (
+            // Instances tab with no selection
+            <div className="max-w-2xl w-full p-8 text-center">
+              <Server className="h-12 w-12 text-gray-600 mx-auto mb-4" />
+              <h2 className="text-lg font-medium text-gray-400 mb-2">Manage Instances & Snapshots</h2>
+              <p className="text-sm text-gray-500 mb-4">
+                Boot snapshots into running instances or click on running instances to open VSCode
+              </p>
+              <div className="text-xs text-gray-600">
+                • Click on a snapshot to boot it<br/>
+                • Click on a running instance to open VSCode<br/>
+                • Use the camera icon to snapshot any running instance
+              </div>
+            </div>
+          ) : activeTab === 'prompts' && selectedEditPromptId ? (
             // Prompt Editor View
             <div className="w-full h-full flex">
               {/* Main Editor Area */}
@@ -822,14 +1238,15 @@ export default function HomeV2Page() {
                 </div>
               )}
               
-              {!selectedPromptId && (
+              {(!selectedPromptId || !selectedOperatorSnapshotId) && (
                 <div className="p-4 bg-yellow-900/20 border border-yellow-600/30 rounded-lg">
                   <div className="flex items-start gap-3">
                     <AlertCircle className="h-5 w-5 text-yellow-400 mt-0.5" />
                     <div>
-                      <div className="text-sm font-medium text-yellow-400">System Prompt Required</div>
+                      <div className="text-sm font-medium text-yellow-400">Configuration Required</div>
                       <div className="text-xs text-yellow-400/80 mt-1">
-                        Please select a system prompt from the configuration panel.
+                        {!selectedOperatorSnapshotId && <div>• Please select an operator snapshot</div>}
+                        {!selectedPromptId && <div>• Please select a system prompt</div>}
                       </div>
                     </div>
                   </div>
@@ -839,10 +1256,10 @@ export default function HomeV2Page() {
               {/* Submit Button */}
               <button
                 type="submit"
-                disabled={!prompt.trim() || isLoading || isSelectedTokenExpired || !selectedTokenId || !selectedPromptId || !selectedVersionId}
+                disabled={!prompt.trim() || isLoading || isSelectedTokenExpired || !selectedTokenId || !selectedPromptId || !selectedVersionId || !selectedOperatorSnapshotId}
                 className={cn(
                   "w-full py-3 px-4 rounded-lg font-medium transition-all flex items-center justify-center gap-2",
-                  !prompt.trim() || isSelectedTokenExpired || !selectedTokenId || !selectedPromptId || !selectedVersionId
+                  !prompt.trim() || isSelectedTokenExpired || !selectedTokenId || !selectedPromptId || !selectedVersionId || !selectedOperatorSnapshotId
                     ? "bg-[#3e3e42] text-gray-600 cursor-not-allowed"
                     : isLoading
                     ? "bg-[#005a9e] text-white cursor-wait"
@@ -971,6 +1388,62 @@ export default function HomeV2Page() {
               disabled={!forkPromptName || !latestVersion}
             >
               Fork
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      
+      {/* Snapshot Dialog */}
+      <Dialog open={showSnapshotDialog} onOpenChange={setShowSnapshotDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create Snapshot</DialogTitle>
+            <DialogDescription>
+              Enter a friendly name for this snapshot. It will be saved as an operator template.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="snapshot-name" className="text-right">
+                Name
+              </Label>
+              <Input
+                id="snapshot-name"
+                value={snapshotFriendlyName}
+                onChange={(e) => setSnapshotFriendlyName(e.target.value)}
+                className="col-span-3"
+                placeholder="My Operator Template"
+                disabled={isSnapshotting}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowSnapshotDialog(false);
+                setSnapshotFriendlyName('');
+                setSnapshotInstanceId(null);
+              }}
+              disabled={isSnapshotting}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleCreateSnapshot}
+              disabled={!snapshotFriendlyName || isSnapshotting}
+            >
+              {isSnapshotting ? (
+                <>
+                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                  Creating...
+                </>
+              ) : (
+                <>
+                  <Camera className="h-4 w-4 mr-2" />
+                  Create Snapshot
+                </>
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

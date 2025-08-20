@@ -12,7 +12,6 @@ export const morphRouter = router({
       .query(async () => {
         try {
           const instances = await morph.instances.list();
-          console.log('Raw instances from Morph:', instances);
           
           // Check status field (Morph uses status, not state)
           const activeInstances = instances
@@ -31,7 +30,6 @@ export const morphRouter = router({
               networking: instance.networking,
             }));
           
-          console.log('Active instances:', activeInstances.length);
           return activeInstances;
         } catch (error) {
           console.error('Failed to list instances:', error);
@@ -153,6 +151,102 @@ export const morphRouter = router({
         });
         const { snapshot, instances } = await instance.branch(input.number);
         return { snapshot, instances };
+      }),
+
+    snapshot: publicProcedure
+      .input(
+        z.object({
+          instanceId: z.string(),
+          metadata: z.record(z.string(), z.any()).optional(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const instance = await morph.instances.get({
+          instanceId: input.instanceId,
+        });
+        
+        const snapshot = await instance.snapshot({
+          metadata: input.metadata,
+        });
+        
+        return {
+          id: snapshot.id,
+          metadata: snapshot.metadata,
+          createdAt: snapshot.created_at,
+        };
+      }),
+  },
+
+  snapshots: {
+    list: publicProcedure
+      .query(async () => {
+        try {
+          const snapshots = await morph.snapshots.list();
+          
+          const processedSnapshots = snapshots.map((snapshot: any) => ({
+            id: snapshot.id,
+            metadata: snapshot.metadata || {},
+            createdAt: snapshot.created_at,
+          }));
+          
+          return processedSnapshots;
+        } catch (error) {
+          console.error('Failed to list snapshots:', error);
+          return [];
+        }
+      }),
+
+    get: publicProcedure
+      .input(z.object({ snapshotId: z.string() }))
+      .query(async ({ input }) => {
+        const snapshot = await morph.snapshots.get(input);
+        return {
+          id: snapshot.id,
+          metadata: snapshot.metadata || {},
+          createdAt: snapshot.created_at,
+        };
+      }),
+
+    start: publicProcedure
+      .input(
+        z.object({
+          snapshotId: z.string(),
+          metadata: z.record(z.string(), z.string()).optional(),
+          ttlSeconds: z.number().optional(),
+          ttlAction: z.enum(["stop", "pause"]).optional(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const instance = await morph.instances.start({
+          snapshotId: input.snapshotId,
+          metadata: input.metadata,
+          ttlAction: input.ttlAction,
+          ttlSeconds: input.ttlSeconds,
+        });
+
+        // Wait for instance to be ready
+        let status = instance.status;
+        let retries = 0;
+        while (status !== 'ready' && retries < 30) {
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          const updatedInstance = await morph.instances.get({ instanceId: instance.id });
+          status = updatedInstance.status;
+          retries++;
+        }
+
+        return {
+          id: instance.id,
+          status: instance.status,
+          networking: instance.networking,
+        };
+      }),
+    
+    delete: publicProcedure
+      .input(z.object({ snapshotId: z.string() }))
+      .mutation(async ({ input }) => {
+        const snapshot = await morph.snapshots.get({ snapshotId: input.snapshotId });
+        await snapshot.delete();
+        return { success: true };
       }),
   },
 });

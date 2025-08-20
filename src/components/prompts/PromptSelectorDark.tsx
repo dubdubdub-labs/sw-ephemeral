@@ -58,17 +58,17 @@ export function PromptSelectorDark({ onSelect, required = true, className = '' }
   
   if (isLoading) {
     return (
-      <div className="text-xs text-gray-500 px-3 py-2">Loading prompts...</div>
+      <div className="text-[10px] text-gray-500 px-2 py-1">Loading prompts...</div>
     );
   }
   
   if (prompts.length === 0) {
     return (
-      <div className="px-3 py-2">
-        <p className="text-xs text-yellow-400 mb-2">No prompts available</p>
+      <div className="px-2 py-1 bg-[#1e1e1e] rounded text-[10px]">
+        <p className="text-yellow-400 mb-1">No prompts available</p>
         <Link 
           href="/prompts"
-          className="text-xs text-blue-400 hover:text-blue-300"
+          className="text-blue-400 hover:text-blue-300"
         >
           Create a prompt →
         </Link>
@@ -87,25 +87,31 @@ export function PromptSelectorDark({ onSelect, required = true, className = '' }
             key={prompt.id}
             onClick={() => handlePromptSelect(prompt)}
             className={cn(
-              "w-full px-3 py-2 rounded text-left transition-all text-xs",
+              "w-full px-2 py-1 rounded text-left transition-all text-[11px]",
               isSelected 
                 ? "bg-[#094771] border border-[#007acc]" 
                 : "bg-[#1e1e1e] hover:bg-[#2a2d2e] border border-transparent"
             )}
           >
-            <div className="flex items-start gap-2">
-              <FileText className="h-3 w-3 text-blue-400 mt-0.5 flex-shrink-0" />
+            <div className="flex items-start gap-1">
+              <div className="mt-0.5">
+                {isSelected ? (
+                  <FileText className="h-2.5 w-2.5 text-blue-400" />
+                ) : (
+                  <FileText className="h-2.5 w-2.5 text-gray-500" />
+                )}
+              </div>
               <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm truncate text-gray-200">{prompt.name}</span>
+                <div className="flex items-center gap-1">
+                  <span className="truncate text-gray-300">{prompt.name}</span>
                   {prompt.isDefault && (
-                    <Star className="h-3 w-3 text-green-400" />
+                    <Star className="h-2.5 w-2.5 text-yellow-500" />
                   )}
                   {prompt.forkedFrom && (
-                    <GitBranch className="h-3 w-3 text-gray-500" />
+                    <GitBranch className="h-2.5 w-2.5 text-gray-500" />
                   )}
                 </div>
-                <div className="flex items-center gap-3 mt-0.5 text-[10px] text-gray-500">
+                <div className="flex items-center gap-2 mt-0.5 text-[10px] text-gray-500">
                   <span>v{latestVersion?.version || 1}</span>
                   <span>{latestVersion?.tokenCount || 0} tokens</span>
                 </div>
@@ -118,9 +124,9 @@ export function PromptSelectorDark({ onSelect, required = true, className = '' }
       {prompts.length > 5 && (
         <button
           onClick={() => setShowAll(!showAll)}
-          className="w-full px-3 py-1 text-xs text-blue-400 hover:text-blue-300 text-left flex items-center gap-1"
+          className="w-full px-2 py-0.5 text-[10px] text-blue-400 hover:text-blue-300 text-left flex items-center gap-1"
         >
-          <ChevronDown className={cn("h-3 w-3 transition-transform", showAll && "rotate-180")} />
+          <ChevronDown className={cn("h-2.5 w-2.5 transition-transform", showAll && "rotate-180")} />
           {showAll ? "Show less" : `Show ${prompts.length - 5} more`}
         </button>
       )}
