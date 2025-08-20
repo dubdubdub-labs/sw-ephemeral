@@ -7,12 +7,14 @@ import { useState, useEffect } from 'react';
 
 export function OperatorChat({ 
   taskId, 
-  instanceId 
+  instanceId,
+  model = 'sonnet' 
 }: { 
   taskId: string;
   instanceId?: string;
+  model?: 'sonnet' | 'opus';
 }) {
-  const { messages, sendMessage, isSending, sessions, setSelectedSessionId, selectedSessionId, isWaitingForResponse, setIsWaitingForResponse } = useOperatorChat(taskId, instanceId);
+  const { messages, sendMessage, isSending, sessions, setSelectedSessionId, selectedSessionId, isWaitingForResponse, setIsWaitingForResponse } = useOperatorChat(taskId, instanceId, model);
   const [isExpanded, setIsExpanded] = useState(false);
   const [lastSessionCount, setLastSessionCount] = useState(0);
   

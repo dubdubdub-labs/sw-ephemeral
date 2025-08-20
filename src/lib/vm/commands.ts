@@ -44,7 +44,8 @@ export function createClaudeSessionCommand(
   sessionName: string,
   prompt: string,
   systemPrompt: string,
-  resumeUuid?: string
+  resumeUuid?: string,
+  model: 'sonnet' | 'opus' = 'sonnet'
 ): string {
   const encodedPrompt = base64Encode(prompt);
   const encodedSystem = base64Encode(systemPrompt);
@@ -54,7 +55,7 @@ export function createClaudeSessionCommand(
   const normalizedName = sessionName.replace(/[^a-zA-Z0-9-]/g, '-');
   
   // Run Claude Code in ~/operator/sw-compose directory
-  return `SESSION_NAME=${sessionName} pm2 start bash --name cc-${normalizedName} --no-autorestart -- -c 'cd ~/operator/sw-compose && echo "${encodedPrompt}" | base64 -d | claude -p ${resumeFlag} --dangerously-skip-permissions --output-format stream-json --verbose --model sonnet --append-system-prompt "$(echo "${encodedSystem}" | base64 -d)"'`;
+  return `SESSION_NAME=${sessionName} pm2 start bash --name cc-${normalizedName} --no-autorestart -- -c 'cd ~/operator/sw-compose && echo "${encodedPrompt}" | base64 -d | claude -p ${resumeFlag} --dangerously-skip-permissions --output-format stream-json --verbose --model ${model} --append-system-prompt "$(echo "${encodedSystem}" | base64 -d)"'`;
 }
 
 export function createStartDevServerCommand(): string {

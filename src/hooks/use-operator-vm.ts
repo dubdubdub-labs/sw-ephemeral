@@ -7,7 +7,7 @@ import * as commands from '@/lib/vm/commands';
 import { VM_TTL_SECONDS, VM_TTL_ACTION } from '@/lib/vm/constants';
 import { useTaskSystemPrompt } from './use-prompts';
 
-export function useOperatorVM(selectedTokenId?: string | null, taskId?: string, snapshotId?: string | null) {
+export function useOperatorVM(selectedTokenId?: string | null, taskId?: string, snapshotId?: string | null, model: 'sonnet' | 'opus' = 'sonnet') {
   const [isBooting, setIsBooting] = useState(false);
   const [instanceId, setInstanceId] = useState<string>();
   const [error, setError] = useState<string>();
@@ -43,7 +43,8 @@ export function useOperatorVM(selectedTokenId?: string | null, taskId?: string, 
     machineName: string,
     token: any,
     systemPrompt?: string,
-    snapshotId?: string
+    snapshotId?: string,
+    model: 'sonnet' | 'opus' = 'sonnet'
   ) {
     console.log('setupVMInBackground called with:', {
       instanceId,
@@ -88,7 +89,7 @@ export function useOperatorVM(selectedTokenId?: string | null, taskId?: string, 
           // Dev server is already running as pm2 process 'operator-dev' in the snapshot
           { command: commands.createClaudeSyncCommand(iterationId) },
           { command: 'sleep 3' },
-          { command: commands.createClaudeSessionCommand('operator-main', prompt, systemPrompt || 'You are an AI assistant helping the user build software.') },
+          { command: commands.createClaudeSessionCommand('operator-main', prompt, systemPrompt || 'You are an AI assistant helping the user build software.', undefined, model) },
         ],
       });
       console.log('Setup commands executed successfully:', result);
@@ -100,7 +101,7 @@ export function useOperatorVM(selectedTokenId?: string | null, taskId?: string, 
     return iterationId;
   }
   
-  async function bootOperator(taskId: string, prompt: string, machineName: string, tokenId?: string | null) {
+  async function bootOperator(taskId: string, prompt: string, machineName: string, tokenId?: string | null, modelParam?: 'sonnet' | 'opus') {
     if (!snapshotId) {
       const errorMsg = 'No snapshot ID provided';
       setError(errorMsg);
@@ -154,7 +155,7 @@ export function useOperatorVM(selectedTokenId?: string | null, taskId?: string, 
       // Only run background setup if we have a token
       if (hasToken) {
         console.log('Starting background setup for instance:', instance.id);
-        setupVMInBackground(instance.id, taskId, prompt, machineName, token, promptContent, snapshotId).then(iterationId => {
+        setupVMInBackground(instance.id, taskId, prompt, machineName, token, promptContent, snapshotId, modelParam || model).then(iterationId => {
           setIterationId(iterationId);
           console.log('VM setup completed with iteration:', iterationId);
         }).catch(err => {

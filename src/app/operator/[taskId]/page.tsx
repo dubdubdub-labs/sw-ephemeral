@@ -20,9 +20,10 @@ export default function OperatorPage({ params }: PageProps) {
   const prompt = searchParams.get('prompt');
   const tokenId = searchParams.get('tokenId');
   const snapshotId = searchParams.get('snapshotId');
+  const model = searchParams.get('model') as 'sonnet' | 'opus' | null;
   
-  const { bootOperator, isBooting, instanceId, error, tokenLoading, checkExistingInstance } = useOperatorVM(tokenId, taskId, snapshotId);
-  const { debug } = useOperatorChat(taskId, instanceId);
+  const { bootOperator, isBooting, instanceId, error, tokenLoading, checkExistingInstance } = useOperatorVM(tokenId, taskId, snapshotId, model || 'sonnet');
+  const { debug } = useOperatorChat(taskId, instanceId, model || 'sonnet');
   
   // Refs for child components
   const frameRef = useRef<OperatorFrameRef>(null);
@@ -84,7 +85,7 @@ export default function OperatorPage({ params }: PageProps) {
       console.log('No existing instance found, booting new operator VM...', { taskId, prompt: prompt.slice(0, 50) });
       
       const machineName = `operator-${Date.now()}`;
-      bootOperator(taskId, prompt, machineName, tokenId).catch(error => {
+      bootOperator(taskId, prompt, machineName, tokenId, model || 'sonnet').catch(error => {
         console.error('Failed to boot operator:', error);
         bootInitiated.current = false; // Reset on error so user can retry
       });
@@ -174,7 +175,7 @@ export default function OperatorPage({ params }: PageProps) {
           onNavigationStateChange={setNavigationState}
         />
       </div>
-      <OperatorChat taskId={taskId} instanceId={instanceId} />
+      <OperatorChat taskId={taskId} instanceId={instanceId} model={model || 'sonnet'} />
     </div>
   );
 }

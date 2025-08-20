@@ -70,6 +70,7 @@ export default function HomeV2Page() {
   const [operatorSnapshotPage, setOperatorSnapshotPage] = useState(0);
   const [showRenameDialog, setShowRenameDialog] = useState(false);
   const [renamePromptName, setRenamePromptName] = useState('');
+  const [selectedModel, setSelectedModel] = useState<'sonnet' | 'opus'>('sonnet');
   
   const { setTaskSystemPrompt, createVersion, createPrompt, setDefaultPrompt, forkPrompt, renamePrompt } = usePromptMutations();
   const { prompts, isLoading: promptsLoading } = usePrompts();
@@ -299,8 +300,8 @@ export default function HomeV2Page() {
         versionId: selectedVersionId,
       });
       
-      // Navigate to the operator page with the task ID, token, and snapshot ID
-      router.push(`/operator/${taskId}?prompt=${encodeURIComponent(prompt)}&tokenId=${selectedTokenId}&snapshotId=${selectedOperatorSnapshotId}`);
+      // Navigate to the operator page with the task ID, token, snapshot ID, and model
+      router.push(`/operator/${taskId}?prompt=${encodeURIComponent(prompt)}&tokenId=${selectedTokenId}&snapshotId=${selectedOperatorSnapshotId}&model=${selectedModel}`);
     } catch (error) {
       console.error('Failed to create task:', error);
       alert('Failed to create task. Please try again.');
@@ -1269,8 +1270,23 @@ export default function HomeV2Page() {
                     disabled={isLoading || isSelectedTokenExpired}
                     className="w-full px-4 py-3 bg-[#252526] border border-[#3e3e42] rounded-lg text-gray-300 placeholder:text-gray-600 focus:outline-none focus:ring-2 focus:ring-[#007acc] focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed resize-none font-mono text-sm"
                   />
-                  <div className="absolute bottom-3 right-3 text-xs text-gray-500">
-                    {prompt.length} characters
+                  <div className="absolute bottom-3 right-3 flex items-center gap-3">
+                    <span className="text-xs text-gray-500">{prompt.length} characters</span>
+                    <select
+                      value={selectedModel}
+                      onChange={(e) => setSelectedModel(e.target.value as 'sonnet' | 'opus')}
+                      className="text-xs text-gray-500 bg-transparent border-none outline-none cursor-pointer hover:text-gray-400 appearance-none pr-4"
+                      style={{
+                        backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e")`,
+                        backgroundRepeat: 'no-repeat',
+                        backgroundPosition: 'right center',
+                        backgroundSize: '14px',
+                        paddingRight: '18px'
+                      }}
+                    >
+                      <option value="sonnet">Sonnet</option>
+                      <option value="opus">Opus</option>
+                    </select>
                   </div>
                 </div>
               </div>

@@ -4,7 +4,7 @@ import { useState } from 'react';
 import * as commands from '@/lib/vm/commands';
 import { OPERATOR_SYSTEM_PROMPT } from '@/lib/vm/constants';
 
-export function useOperatorChat(taskId: string, instanceId?: string) {
+export function useOperatorChat(taskId: string, instanceId?: string, model: 'sonnet' | 'opus' = 'sonnet') {
   const [isSending, setIsSending] = useState(false);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
@@ -77,7 +77,8 @@ export function useOperatorChat(taskId: string, instanceId?: string) {
         newSessionName,
         content,
         OPERATOR_SYSTEM_PROMPT,
-        sessionToUse.externalUuid // Resume from this session
+        sessionToUse.externalUuid, // Resume from this session
+        model
       );
       
       await execCommandsMutation.mutateAsync({
