@@ -81,6 +81,7 @@ export function useOperatorVM(selectedTokenId?: string | null, taskId?: string, 
       const result = await execCommandsMutation.mutateAsync({
         instanceId,
         commands: [
+          { command: commands.createMachineInfoCommand(taskId, instanceId) },
           { command: commands.createClaudeCredentialsCommand({
             authToken: token.authToken || '',
             expiresAt: token.expiresAt || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) // 30 days default

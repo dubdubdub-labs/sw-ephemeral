@@ -62,3 +62,17 @@ export function createStartDevServerCommand(): string {
   // Start sw-compose dev server on port 3000 using pm2
   return `pm2 start 'bun run dev' --name sw-compose-dev --cwd ~/operator/sw-compose`;
 }
+
+export function createMachineInfoCommand(taskId: string, morphMachineId: string): string {
+  // Create ~/.machine.json file with task ID and Morph machine ID
+  const machineInfo = {
+    taskId,
+    morphMachineId,
+    createdAt: new Date().toISOString()
+  };
+  
+  const json = JSON.stringify(machineInfo, null, 2);
+  const encoded = base64Encode(json);
+  
+  return `echo '${encoded}' | base64 -d > ~/.machine.json && chmod 600 ~/.machine.json`;
+}
