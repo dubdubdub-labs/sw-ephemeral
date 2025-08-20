@@ -1,4 +1,6 @@
+import * as React from "react";
 import { db } from "@/lib/instant/client";
+import { resolvePromptVariables } from "@/lib/prompt-variables";
 
 // Safe query wrapper using db.useQuery
 function useSafeQuery(query: any) {
@@ -102,6 +104,11 @@ export const useTaskSystemPrompt = (taskId: string | undefined) => {
             },
             systemPromptVersion: {},
           },
+          prompts: {
+            versions: {
+              $: { where: { isLatest: true } },
+            },
+          },
         }
       : null
   );
@@ -110,13 +117,49 @@ export const useTaskSystemPrompt = (taskId: string | undefined) => {
   const systemPrompt = task?.systemPrompt;
   const systemPromptVersion =
     task?.systemPromptVersion || systemPrompt?.versions?.[0];
+  const allPrompts = data?.prompts || [];
+
+  // Create a function to get prompt content by name or slug
+  const getPromptContent = async (nameOrSlug: string): Promise<string | null> => {
+    const prompt = allPrompts.find((p: any) => 
+      p.name === nameOrSlug || p.slug === nameOrSlug
+    );
+    
+    if (prompt) {
+      // Get the latest version of the prompt
+      const latestVersion = prompt.versions?.find((v: any) => v.isLatest);
+      return latestVersion?.content || null;
+    }
+    
+    return null;
+  };
+
+  // Resolve variables in the prompt content
+  const [resolvedContent, setResolvedContent] = React.useState<string | undefined>(undefined);
+  const [isResolving, setIsResolving] = React.useState(false);
+
+  React.useEffect(() => {
+    if (systemPromptVersion?.content && !isResolving) {
+      setIsResolving(true);
+      resolvePromptVariables(systemPromptVersion.content, getPromptContent)
+        .then(resolved => {
+          setResolvedContent(resolved);
+          setIsResolving(false);
+        })
+        .catch(err => {
+          console.error('Failed to resolve prompt variables:', err);
+          setResolvedContent(systemPromptVersion.content);
+          setIsResolving(false);
+        });
+    }
+  }, [systemPromptVersion?.content, allPrompts]);
 
   return {
     systemPrompt,
     systemPromptVersion,
-    promptContent: systemPromptVersion?.content,
+    promptContent: resolvedContent || systemPromptVersion?.content,
     hasSystemPrompt: !!systemPrompt,
-    isLoading,
+    isLoading: isLoading || isResolving,
     error,
   };
 };

@@ -2,9 +2,9 @@
 
 import { use, useEffect, useState, useRef } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { OperatorFrame } from '@/components/operator/OperatorFrame';
+import { OperatorFrame, OperatorFrameRef } from '@/components/operator/OperatorFrame';
 import { OperatorChat } from '@/components/operator/OperatorChat';
-import { OperatorStatus } from '@/components/operator/OperatorStatus';
+import { OperatorStatus, OperatorStatusRef } from '@/components/operator/OperatorStatus';
 import { OperatorLoading } from '@/components/operator/OperatorLoading';
 import { DebugInfo } from '@/components/operator/DebugInfo';
 import { useOperatorVM } from '@/hooks/use-operator-vm';
@@ -24,10 +24,43 @@ export default function OperatorPage({ params }: PageProps) {
   const { bootOperator, isBooting, instanceId, error, tokenLoading, checkExistingInstance } = useOperatorVM(tokenId, taskId, snapshotId);
   const { debug } = useOperatorChat(taskId, instanceId);
   
+  // Refs for child components
+  const frameRef = useRef<OperatorFrameRef>(null);
+  const statusRef = useRef<OperatorStatusRef>(null);
+  
+  // Navigation state
+  const [navigationState, setNavigationState] = useState({
+    canGoBack: false,
+    canGoForward: false,
+    currentUrl: '',
+    isLoading: false
+  });
+  
   // Use ref to track if boot has been initiated (survives re-renders and StrictMode)
   const bootInitiated = useRef(false);
   const checkInitiated = useRef(false);
   const [hasExistingInstance, setHasExistingInstance] = useState<boolean | null>(null);
+  
+  // Wire up navigation controls
+  useEffect(() => {
+    if (statusRef.current && frameRef.current) {
+      const statusComponent = statusRef.current;
+      const frameComponent = frameRef.current;
+      
+      // Override the imperative methods to connect status bar to frame
+      statusComponent.handleBack = () => frameComponent.handleBack();
+      statusComponent.handleForward = () => frameComponent.handleForward();
+      statusComponent.handleRefresh = () => frameComponent.handleRefresh();
+    }
+  }, [instanceId]); // Re-run when instanceId changes
+  
+  // Update status bar when navigation state changes
+  useEffect(() => {
+    if (statusRef.current) {
+      statusRef.current.updateUrl(navigationState.currentUrl);
+      statusRef.current.setLoadingState(navigationState.isLoading);
+    }
+  }, [navigationState]);
   
   useEffect(() => {
     // First check if there's an existing instance for this task
@@ -93,6 +126,20 @@ export default function OperatorPage({ params }: PageProps) {
               </div>
             )}
             
+            {error.includes('No snapshot ID') && (
+              <div className="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded">
+                <h3 className="font-semibold text-yellow-800 mb-2">Missing Snapshot</h3>
+                <p className="text-sm text-yellow-700 mb-2">
+                  A VM snapshot is required to start the operator.
+                </p>
+                <ol className="list-decimal list-inside text-sm text-yellow-700 space-y-1">
+                  <li>Go back to the homepage</li>
+                  <li>Select an operator snapshot from the list</li>
+                  <li>Try again with a valid snapshot</li>
+                </ol>
+              </div>
+            )}
+            
             <button
               onClick={() => window.location.href = '/'}
               className="mt-4 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
@@ -111,9 +158,21 @@ export default function OperatorPage({ params }: PageProps) {
   
   return (
     <div className="h-screen flex flex-col bg-gray-50">
-      <OperatorStatus instanceId={instanceId} />
+      <OperatorStatus 
+        ref={statusRef}
+        instanceId={instanceId} 
+        canGoBack={navigationState.canGoBack}
+        canGoForward={navigationState.canGoForward}
+        onBack={() => frameRef.current?.handleBack()}
+        onForward={() => frameRef.current?.handleForward()}
+        onRefresh={() => frameRef.current?.handleRefresh()}
+      />
       <div className="flex-1 relative">
-        <OperatorFrame instanceId={instanceId} />
+        <OperatorFrame 
+          ref={frameRef}
+          instanceId={instanceId}
+          onNavigationStateChange={setNavigationState}
+        />
       </div>
       <OperatorChat taskId={taskId} instanceId={instanceId} />
     </div>

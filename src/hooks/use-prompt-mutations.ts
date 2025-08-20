@@ -415,6 +415,43 @@ export const usePromptMutations = () => {
     return { promptId };
   }, []);
 
+  const renamePrompt = useCallback(
+    async (promptId: string, newName: string) => {
+      if (!newName || newName.trim().length === 0) {
+        throw new Error("Prompt name cannot be empty");
+      }
+
+      // Generate slug from name
+      const newSlug = newName
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-|-$/g, "");
+
+      // Check if slug already exists
+      const { data } = await db.queryOnce({
+        prompts: {
+          $: { where: { slug: newSlug } },
+        },
+      });
+
+      if (data?.prompts?.length && data.prompts[0].id !== promptId) {
+        throw new Error("A prompt with this name already exists");
+      }
+
+      // Update the prompt
+      await db.transact([
+        db.tx.prompts[promptId].update({
+          name: newName.trim(),
+          slug: newSlug,
+          updatedAt: new Date(),
+        }),
+      ]);
+
+      return { promptId, name: newName.trim(), slug: newSlug };
+    },
+    []
+  );
+
   return {
     createPrompt,
     forkPrompt,
@@ -425,5 +462,6 @@ export const usePromptMutations = () => {
     saveDraft,
     publishDraft,
     setDefaultPrompt,
+    renamePrompt,
   };
 };

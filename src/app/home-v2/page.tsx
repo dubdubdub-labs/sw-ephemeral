@@ -10,6 +10,7 @@ import Link from 'next/link';
 import { PromptSelectorDark } from '@/components/prompts/PromptSelectorDark';
 import { usePromptMutations } from '@/hooks/use-prompt-mutations';
 import { usePrompts, usePromptDetails } from '@/hooks/use-prompts';
+import { extractPromptVariables } from '@/lib/prompt-variables';
 import { trpc } from '@/lib/trpc/client';
 import dynamic from 'next/dynamic';
 import { Button } from '@/components/ui/button';
@@ -25,7 +26,7 @@ import {
   Settings, GitBranch, Home, Code, Folder, FolderOpen,
   Server, Pause, StopCircle, FileCode, Search, ListTree,
   Save, Hash, GitCommit, Eye, Edit2, Star, History, Plus,
-  GitFork, MoreVertical, Camera, HardDrive, Rocket, Monitor, Trash2
+  GitFork, MoreVertical, Camera, HardDrive, Rocket, Monitor, Trash2, Link2, Pencil
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { estimateTokens } from '@/lib/prompts/utils';
@@ -67,10 +68,17 @@ export default function HomeV2Page() {
   const [isBooting, setIsBooting] = useState<string | null>(null);
   const [selectedOperatorSnapshotId, setSelectedOperatorSnapshotId] = useState<string | null>(null);
   const [operatorSnapshotPage, setOperatorSnapshotPage] = useState(0);
+  const [showRenameDialog, setShowRenameDialog] = useState(false);
+  const [renamePromptName, setRenamePromptName] = useState('');
   
-  const { setTaskSystemPrompt, createVersion, createPrompt, setDefaultPrompt, forkPrompt } = usePromptMutations();
+  const { setTaskSystemPrompt, createVersion, createPrompt, setDefaultPrompt, forkPrompt, renamePrompt } = usePromptMutations();
   const { prompts, isLoading: promptsLoading } = usePrompts();
   const { prompt: editingPrompt, versions, latestVersion } = usePromptDetails(selectedEditPromptId || '');
+  
+  // Extract prompt variables from content
+  const promptVariables = React.useMemo(() => {
+    return extractPromptVariables(promptContent);
+  }, [promptContent]);
   
   // Fetch active instances from Morph
   const { data: instances = [], isLoading: instancesLoading, refetch: refetchInstances } = trpc.morph.instances.list.useQuery(
@@ -1052,6 +1060,20 @@ export default function HomeV2Page() {
                   <Button
                     size="sm"
                     variant="ghost"
+                    className="h-7 text-xs"
+                    onClick={() => {
+                      if (selectedEditPromptId && editingPrompt) {
+                        setRenamePromptName(editingPrompt.name || '');
+                        setShowRenameDialog(true);
+                      }
+                    }}
+                    title="Rename Prompt"
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
                     className={cn(
                       "h-7 text-xs",
                       editingPrompt?.isDefault && "text-yellow-400"
@@ -1108,16 +1130,66 @@ export default function HomeV2Page() {
               </div>
               </div>
               
-              {/* Right Sidebar - Version History */}
+              {/* Right Sidebar - Variables & Version History */}
               <div className="w-64 bg-[#252526] border-l border-[#3e3e42] flex flex-col">
-                <div className="h-12 bg-[#2d2d30] border-b border-[#3e3e42] flex items-center px-3">
-                  <History className="h-3.5 w-3.5 text-gray-400 mr-2" />
-                  <span className="text-xs font-medium text-gray-400">Version History</span>
-                </div>
                 <ScrollArea className="flex-1">
-                  <div className="p-2 space-y-1">
-                    {versions && versions.length > 0 ? (
-                      versions.map((version: any) => (
+                  <div className="flex flex-col h-full">
+                    {/* Variables Section */}
+                    <div className="border-b border-[#3e3e42]">
+                      <div className="h-10 bg-[#2d2d30] flex items-center px-3">
+                        <Link2 className="h-3.5 w-3.5 text-gray-400 mr-2" />
+                        <span className="text-xs font-medium text-gray-400">Prompt Variables</span>
+                      </div>
+                      <div className="p-2 pb-3">
+                        {promptVariables.length > 0 ? (
+                          <div className="space-y-1.5">
+                            {promptVariables.map((variable) => {
+                              const referencedPrompt = prompts?.find((p: any) => 
+                                p.name === variable || p.slug === variable
+                              );
+                              return (
+                                <div
+                                  key={variable}
+                                  className="px-2 py-1.5 rounded bg-[#1e1e1e] border border-[#3e3e42]"
+                                >
+                                  <div className="flex items-center gap-2">
+                                    <Link2 className="h-2.5 w-2.5 text-blue-400 flex-shrink-0" />
+                                    <span className="text-xs text-gray-300 font-mono truncate">
+                                      {`{{${variable}}}`}
+                                    </span>
+                                  </div>
+                                  {referencedPrompt ? (
+                                    <div className="mt-0.5 text-[10px] text-gray-500 truncate">
+                                      ✓ {referencedPrompt.name}
+                                    </div>
+                                  ) : (
+                                    <div className="mt-0.5 text-[10px] text-red-400">
+                                      ✗ Not found
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <div className="text-xs text-gray-500 text-center py-2">
+                            <div className="text-[10px] text-gray-600">
+                              Use {`{{name}}`} to import
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Version History Section */}
+                    <div className="flex-1">
+                      <div className="h-10 bg-[#2d2d30] border-b border-[#3e3e42] flex items-center px-3">
+                        <History className="h-3.5 w-3.5 text-gray-400 mr-2" />
+                        <span className="text-xs font-medium text-gray-400">Version History</span>
+                      </div>
+                      <div className="p-2 space-y-1">
+                        {versions && versions.length > 0 ? (
+                          versions.map((version: any) => (
                         <button
                           key={version.id}
                           className={cn(
@@ -1157,12 +1229,14 @@ export default function HomeV2Page() {
                             {new Date(version.createdAt).toLocaleDateString()} • {new Date(version.createdAt).toLocaleTimeString()}
                           </p>
                         </button>
-                      ))
-                    ) : (
-                      <div className="text-xs text-gray-500 text-center py-4">
-                        No versions yet
+                          ))
+                        ) : (
+                          <div className="text-xs text-gray-500 text-center py-4">
+                            No versions yet
+                          </div>
+                        )}
                       </div>
-                    )}
+                    </div>
                   </div>
                 </ScrollArea>
               </div>
@@ -1372,6 +1446,56 @@ export default function HomeV2Page() {
               disabled={!forkPromptName || !latestVersion}
             >
               Fork
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      
+      {/* Rename Prompt Dialog */}
+      <Dialog open={showRenameDialog} onOpenChange={setShowRenameDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Rename Prompt</DialogTitle>
+            <DialogDescription>
+              Enter a new name for your prompt
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="rename-name" className="text-right">
+                Name
+              </Label>
+              <Input
+                id="rename-name"
+                value={renamePromptName}
+                onChange={(e) => setRenamePromptName(e.target.value)}
+                className="col-span-3"
+                placeholder="Prompt Name"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setShowRenameDialog(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={async () => {
+                if (selectedEditPromptId && renamePromptName) {
+                  try {
+                    await renamePrompt(selectedEditPromptId, renamePromptName);
+                    setShowRenameDialog(false);
+                  } catch (error) {
+                    console.error('Failed to rename prompt:', error);
+                    alert(error instanceof Error ? error.message : 'Failed to rename prompt');
+                  }
+                }
+              }}
+              disabled={!renamePromptName}
+            >
+              Rename
             </Button>
           </DialogFooter>
         </DialogContent>
