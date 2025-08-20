@@ -4,17 +4,17 @@ import { id, lookup } from '@instantdb/core';
 import { useState, useCallback } from 'react';
 import { useAnthropicOAuth } from './use-anthropic-oauth';
 import * as commands from '@/lib/vm/commands';
-import { OPERATOR_SNAPSHOT_ID, VM_TTL_SECONDS, VM_TTL_ACTION } from '@/lib/vm/constants';
+import { VM_TTL_SECONDS, VM_TTL_ACTION } from '@/lib/vm/constants';
 import { useTaskSystemPrompt } from './use-prompts';
 
-export function useOperatorVM(selectedTokenId?: string | null, taskId?: string) {
+export function useOperatorVM(selectedTokenId?: string | null, taskId?: string, snapshotId?: string | null) {
   const [isBooting, setIsBooting] = useState(false);
   const [instanceId, setInstanceId] = useState<string>();
   const [error, setError] = useState<string>();
   const [iterationId, setIterationId] = useState<string>();
   
   // Get the task's system prompt
-  const { promptContent, hasSystemPrompt } = useTaskSystemPrompt(taskId);
+  const { promptContent, hasSystemPrompt, isLoading: promptLoading } = useTaskSystemPrompt(taskId);
   
   // Query specific token if provided
   const { data: tokenData, isLoading: tokenLoading } = db.useQuery(
@@ -42,7 +42,8 @@ export function useOperatorVM(selectedTokenId?: string | null, taskId?: string) 
     prompt: string, 
     machineName: string,
     token: any,
-    systemPrompt?: string
+    systemPrompt?: string,
+    snapshotId?: string
   ) {
     console.log('setupVMInBackground called with:', {
       instanceId,
@@ -53,11 +54,11 @@ export function useOperatorVM(selectedTokenId?: string | null, taskId?: string) 
     // Create iteration in InstantDB
     const iterationId = id();
     const morphInstanceId = id();
-    const morphSnapshotLookup = lookup('externalMorphSnapshotId', OPERATOR_SNAPSHOT_ID);
+    const morphSnapshotLookup = lookup('externalMorphSnapshotId', snapshotId || 'snapshot_default');
     
     await db.transact([
       db.tx.morphSnapshots[morphSnapshotLookup].update({
-        externalMorphSnapshotId: OPERATOR_SNAPSHOT_ID,
+        externalMorphSnapshotId: snapshotId || 'snapshot_default',
       }),
       db.tx.morphInstances[morphInstanceId].update({
         externalMorphInstanceId: instanceId,
@@ -100,6 +101,12 @@ export function useOperatorVM(selectedTokenId?: string | null, taskId?: string) 
   }
   
   async function bootOperator(taskId: string, prompt: string, machineName: string, tokenId?: string | null) {
+    if (!snapshotId) {
+      const errorMsg = 'No snapshot ID provided';
+      setError(errorMsg);
+      throw new Error(errorMsg);
+    }
+    
     console.log('Boot operator called, token status:', {
       hasToken: !!token,
       tokenAuth: token?.authToken?.slice(0, 20),
@@ -110,9 +117,9 @@ export function useOperatorVM(selectedTokenId?: string | null, taskId?: string) 
       systemPromptLength: promptContent?.length,
     });
     
-    // Don't boot if tokens are still loading
-    if (isLoading) {
-      console.log('Waiting for tokens to load...');
+    // Don't boot if tokens or prompt are still loading
+    if (isLoading || promptLoading) {
+      console.log('Waiting for tokens and prompt to load...');
       return;
     }
     
@@ -133,7 +140,7 @@ export function useOperatorVM(selectedTokenId?: string | null, taskId?: string) 
     try {
       // 1. Start the VM (port already exposed in snapshot as 'operator')
       const { instance } = await startInstanceMutation.mutateAsync({
-        snapshotId: OPERATOR_SNAPSHOT_ID,
+        snapshotId: snapshotId,
         ttlSeconds: VM_TTL_SECONDS,
         ttlAction: VM_TTL_ACTION,
         // Port 3000 is pre-exposed as 'operator' in the snapshot
@@ -147,7 +154,7 @@ export function useOperatorVM(selectedTokenId?: string | null, taskId?: string) 
       // Only run background setup if we have a token
       if (hasToken) {
         console.log('Starting background setup for instance:', instance.id);
-        setupVMInBackground(instance.id, taskId, prompt, machineName, token, promptContent).then(iterationId => {
+        setupVMInBackground(instance.id, taskId, prompt, machineName, token, promptContent, snapshotId).then(iterationId => {
           setIterationId(iterationId);
           console.log('VM setup completed with iteration:', iterationId);
         }).catch(err => {
@@ -164,11 +171,11 @@ export function useOperatorVM(selectedTokenId?: string | null, taskId?: string) 
         // Still create the iteration in DB even without Claude
         const iterationId = id();
         const morphInstanceId = id();
-        const morphSnapshotLookup = lookup('externalMorphSnapshotId', OPERATOR_SNAPSHOT_ID);
+        const morphSnapshotLookup = lookup('externalMorphSnapshotId', snapshotId);
         
         db.transact([
           db.tx.morphSnapshots[morphSnapshotLookup].update({
-            externalMorphSnapshotId: OPERATOR_SNAPSHOT_ID,
+            externalMorphSnapshotId: snapshotId,
           }),
           db.tx.morphInstances[morphInstanceId].update({
             externalMorphInstanceId: instance.id,
@@ -255,7 +262,7 @@ export function useOperatorVM(selectedTokenId?: string | null, taskId?: string) 
     instanceId,
     iterationId,
     error,
-    tokenLoading: isLoading,
+    tokenLoading: isLoading || promptLoading,
     checkExistingInstance,
   };
 }

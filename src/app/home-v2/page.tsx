@@ -56,6 +56,8 @@ export default function HomeV2Page() {
   const [newPromptName, setNewPromptName] = useState('');
   const [showForkDialog, setShowForkDialog] = useState(false);
   const [forkPromptName, setForkPromptName] = useState('');
+  const [showSaveChangelogDialog, setShowSaveChangelogDialog] = useState(false);
+  const [tempPromptChangelog, setTempPromptChangelog] = useState('');
   const [selectedInstanceId, setSelectedInstanceId] = useState<string | null>(null);
   const [showVSCode, setShowVSCode] = useState(false);
   const [showSnapshotDialog, setShowSnapshotDialog] = useState(false);
@@ -1070,19 +1072,14 @@ export default function HomeV2Page() {
                     size="sm"
                     variant="ghost"
                     className="h-7 text-xs"
-                    disabled={!promptContent || promptContent === latestVersion?.content || !promptChangelog}
-                    onClick={async () => {
-                      if (selectedEditPromptId && promptContent && promptChangelog) {
-                        await createVersion({
-                          promptId: selectedEditPromptId,
-                          content: promptContent,
-                          changelog: promptChangelog
-                        });
-                        setPromptChangelog('');
-                        setHasPromptChanges(false);
+                    disabled={!promptContent || promptContent === latestVersion?.content}
+                    onClick={() => {
+                      if (selectedEditPromptId && promptContent && promptContent !== latestVersion?.content) {
+                        setTempPromptChangelog('');
+                        setShowSaveChangelogDialog(true);
                       }
                     }}
-                    title={!promptChangelog && hasPromptChanges ? "Enter changelog below to save" : "Save Version"}
+                    title="Save Version"
                   >
                     <Save className="h-3.5 w-3.5 mr-1" />
                     Save Version
@@ -1109,19 +1106,6 @@ export default function HomeV2Page() {
                   }}
                 />
               </div>
-              
-                {/* Save Changelog Input */}
-                {hasPromptChanges && (
-                  <div className="h-12 bg-[#2d2d30] border-t border-[#3e3e42] flex items-center px-4">
-                    <input
-                      type="text"
-                      placeholder="Describe your changes (required to save)..."
-                      value={promptChangelog}
-                      onChange={(e) => setPromptChangelog(e.target.value)}
-                      className="flex-1 bg-[#1e1e1e] border border-[#3e3e42] rounded px-2 py-1 text-xs text-gray-300 placeholder:text-gray-600 focus:outline-none focus:ring-1 focus:ring-[#007acc]"
-                    />
-                  </div>
-                )}
               </div>
               
               {/* Right Sidebar - Version History */}
@@ -1388,6 +1372,63 @@ export default function HomeV2Page() {
               disabled={!forkPromptName || !latestVersion}
             >
               Fork
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      
+      {/* Save Changelog Dialog */}
+      <Dialog open={showSaveChangelogDialog} onOpenChange={setShowSaveChangelogDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Save Prompt Version</DialogTitle>
+            <DialogDescription>
+              Describe what changes you've made to this prompt. This helps track the evolution of your system prompts.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="changelog" className="text-right">
+                Changelog
+              </Label>
+              <Input
+                id="changelog"
+                value={tempPromptChangelog}
+                onChange={(e) => setTempPromptChangelog(e.target.value)}
+                className="col-span-3"
+                placeholder="e.g., Added instructions for handling edge cases"
+                autoFocus
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowSaveChangelogDialog(false);
+                setTempPromptChangelog('');
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={async () => {
+                if (tempPromptChangelog && selectedEditPromptId && promptContent) {
+                  await createVersion({
+                    promptId: selectedEditPromptId,
+                    content: promptContent,
+                    changelog: tempPromptChangelog
+                  });
+                  setTempPromptChangelog('');
+                  setPromptChangelog('');
+                  setHasPromptChanges(false);
+                  setShowSaveChangelogDialog(false);
+                }
+              }}
+              disabled={!tempPromptChangelog}
+            >
+              <Save className="h-4 w-4 mr-2" />
+              Save Version
             </Button>
           </DialogFooter>
         </DialogContent>

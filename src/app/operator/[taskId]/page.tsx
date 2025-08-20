@@ -19,8 +19,9 @@ export default function OperatorPage({ params }: PageProps) {
   const searchParams = useSearchParams();
   const prompt = searchParams.get('prompt');
   const tokenId = searchParams.get('tokenId');
+  const snapshotId = searchParams.get('snapshotId');
   
-  const { bootOperator, isBooting, instanceId, error, tokenLoading, checkExistingInstance } = useOperatorVM(tokenId, taskId);
+  const { bootOperator, isBooting, instanceId, error, tokenLoading, checkExistingInstance } = useOperatorVM(tokenId, taskId, snapshotId);
   const { debug } = useOperatorChat(taskId, instanceId);
   
   // Use ref to track if boot has been initiated (survives re-renders and StrictMode)

@@ -1,4 +1,3 @@
-export const OPERATOR_SNAPSHOT_ID = process.env.NEXT_PUBLIC_OPERATOR_SNAPSHOT_ID || 'morphvm_i3u626ot';
 export const OPERATOR_SERVICE_NAME = 'operator'; // Changed from 'operator-dev' since port is pre-exposed as 'operator'
 export const OPERATOR_DEV_PORT = 3000;
 export const VM_TTL_SECONDS = 3600;
